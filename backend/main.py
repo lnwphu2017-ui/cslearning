@@ -1,0 +1,550 @@
+# -*- coding: utf-8 -*-
+import os
+import json
+import traceback
+from datetime import datetime
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
+from typing import List, Dict, Any, Optional, Sequence
+from typing_extensions import Annotated, TypedDict
+from dotenv import load_dotenv
+import operator
+
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, BaseMessage
+from langgraph.graph import StateGraph, START, END
+
+from retriever import get_retriever, get_full_syllabus, get_subject_section
+from supabase_client import supabase
+
+load_dotenv()
+
+app = FastAPI()
+
+# Middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# 1. Initialize LLM (OpenRouter) with fallback
+primary_model_name = os.environ.get("OPENROUTER_MODEL", "openai/gpt-oss-120b:free")
+fallback_model_name = os.environ.get("OPENROUTER_FALLBACK_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
+api_key = os.environ.get("OPENROUTER_API_KEY", "")
+
+def create_model(model_name: str) -> ChatOpenAI:
+    return ChatOpenAI(
+        model=model_name,
+        api_key=api_key,
+        base_url="https://openrouter.ai/api/v1",
+        default_headers={
+            "HTTP-Referer": "http://localhost:5173",
+            "X-Title": "CSL AI Learning Dashboard",
+        }
+    )
+
+model = create_model(primary_model_name)
+fallback_model = create_model(fallback_model_name)
+
+async def invoke_with_fallback(messages, use_model=None):
+    """Try primary model first, fallback to secondary if it fails."""
+    m = use_model or model
+    try:
+        return await m.ainvoke(messages)
+    except Exception as e:
+        error_str = str(e)
+        print(f"Primary model error: {error_str[:150]}")
+        # Fallback for common API errors or library internal errors (like TypeError)
+        if any(err in error_str for err in ["404", "429", "503", "NoneType", "iterable"]):
+            print(f"--- TRYING FALLBACK MODEL: {fallback_model_name} ---")
+            return await fallback_model.ainvoke(messages)
+        raise
+
+async def invoke_structured_with_fallback(messages, schema):
+    """Try structured output with primary model, fallback to secondary."""
+    try:
+        structured = model.with_structured_output(schema)
+        return await structured.ainvoke(messages)
+    except Exception as e:
+        error_str = str(e)
+        print(f"Structured model error: {error_str[:150]}")
+        if any(err in error_str for err in ["404", "429", "503", "NoneType", "iterable"]):
+            print(f"--- TRYING STRUCTURED FALLBACK: {fallback_model_name} ---")
+            structured_fb = fallback_model.with_structured_output(schema)
+            return await structured_fb.ainvoke(messages)
+        raise
+
+def parse_json_from_text(text: str) -> Dict[str, Any]:
+    """Extract and parse JSON from a string that might contain markdown blocks."""
+    raw_text = text.strip()
+    # Remove markdown JSON formatting if present
+    if "```json" in raw_text:
+        raw_text = raw_text.split("```json")[1].split("```")[0]
+    elif "```" in raw_text:
+        raw_text = raw_text.split("```")[1].split("```")[0]
+    
+    raw_text = raw_text.strip()
+    return json.loads(raw_text)
+
+# 2. Schemas for Inputs
+class Message(BaseModel):
+    role: str
+    content: str
+
+class ChatRequest(BaseModel):
+    messages: List[Message]
+    userId: Optional[str] = None
+
+class GenerateRequest(BaseModel):
+    chapterTitle: str
+
+class GenerateExamRequest(BaseModel):
+    chapterTitles: List[str]
+
+class PDFSummaryRequest(BaseModel):
+    quizScores: Dict[str, Any]
+    examResults: Dict[str, Any]
+    radarScores: List[Any]
+
+class LessonRequest(BaseModel):
+    title: str
+    content: str
+    order_index: int
+
+class CompleteLessonRequest(BaseModel):
+    userId: str
+    lessonId: str
+
+class SaveScoreRequest(BaseModel):
+    userId: str
+    lessonId: str
+    type: str
+    score: int
+    totalQuestions: int
+
+class SaveExamResultRequest(BaseModel):
+    userId: str
+    totalScore: int
+    totalQuestions: int
+    categoryScores: List[Any]
+    recommendation: str
+
+# Pydantic Schemas for LLM Structured Output
+class QuizQuestion(BaseModel):
+    question: str = Field(description="The text of the question")
+    options: List[str] = Field(description="4 possible choices", min_length=4, max_length=4)
+    correctIndex: int = Field(description="Index of the correct option (0-3)", ge=0, le=3)
+    domain: str = Field(description="Bloom's Taxonomy cognitive domain for this question (Remember, Understand, Apply, Analyze, Evaluate, Create)")
+
+class QuizSchema(BaseModel):
+    questions: List[QuizQuestion]
+
+class Flashcard(BaseModel):
+    front: str = Field(description="The question or term on the front of the flashcard")
+    back: str = Field(description="The answer or definition on the back of the flashcard")
+
+class FlashcardSchema(BaseModel):
+    cards: List[Flashcard]
+
+class ExamQuestion(BaseModel):
+    question: str = Field(description="The text of the question")
+    options: List[str] = Field(description="4 possible choices", min_length=4, max_length=4)
+    correctIndex: int = Field(description="Index of the correct option (0-3)", ge=0, le=3)
+    domain: str = Field(description="Bloom's Taxonomy cognitive domain")
+    chapterTitle: str = Field(description="The chapter this question belongs to")
+
+class ExamSchema(BaseModel):
+    questions: List[ExamQuestion]
+
+# 3. Define the Graph State using TypedDict (required for LangGraph Python)
+class AgentState(TypedDict):
+    messages: Annotated[Sequence[BaseMessage], operator.add]
+    context: str
+
+# 4. Load syllabus once at startup
+_syllabus_context = get_full_syllabus()
+
+# 5. Define Nodes
+async def retrieve_node(state: AgentState):
+    last_message = state["messages"][-1].content
+    print(f"---CHAT QUESTION: {last_message[:80]}---")
+    # Always use the full syllabus as context
+    return {"context": _syllabus_context}
+
+async def generate_node(state: AgentState):
+    print("---GENERATING RESPONSE---")
+    system_prompt = f"""คุณคือผู้ช่วยสอนวิทยาการคอมพิวเตอร์ (Computer Science) ระดับมหาวิทยาลัย
+
+บทบาทของคุณ:
+- คุณเป็น AI สำหรับช่วยเรียนวิทยาการคอมพิวเตอร์โดยเฉพาะ
+- คุณต้องตอบคำถามเกี่ยวกับวิทยาการคอมพิวเตอร์ (Computer Science) เท่านั้น
+
+กฎการตอบคำถาม:
+1. เมื่อนักศึกษาถามเกี่ยวกับหลักสูตร รายวิชา บทเรียน หรือเนื้อหาในหลักสูตร ให้ตอบจากข้อมูลหลักสูตรด้านล่างเป็นหลัก โดยต้องตอบให้ครบถ้วนและถูกต้องตามเอกสาร เช่น ถ้าวิชามี 10 บท ต้องตอบครบ 10 บท ห้ามตัดออก
+2. เมื่อนักศึกษาถามเรื่อง CS ทั่วไป เช่น อธิบาย algorithm, อธิบาย data structure, อธิบาย concept ต่างๆ ให้ตอบโดยใช้ความรู้ทั่วไปด้าน CS ได้เลย แต่ถ้ามีข้อมูลในหลักสูตรที่เกี่ยวข้อง ให้อ้างอิงด้วย
+3. ห้ามตอบคำถามที่ไม่เกี่ยวข้องกับ Computer Science เช่น วิธีทำอาหาร สัตว์เลี้ยง กีฬา การเมือง ฯลฯ ให้ปฏิเสธอย่างสุภาพว่า "ขออภัยครับ ผมเป็น AI สำหรับช่วยเรียนวิทยาการคอมพิวเตอร์เท่านั้น ไม่สามารถตอบคำถามนอกเรื่อง CS ได้ครับ"
+
+รูปแบบการตอบ:
+- ตอบเป็นภาษาไทย ยกเว้นศัพท์เทคนิคให้ใช้ภาษาอังกฤษ
+- จัดรูปแบบด้วย Markdown ให้อ่านง่าย (ใช้หัวข้อ, bullet points, ตาราง ตามความเหมาะสม)
+
+=== ข้อมูลหลักสูตร (Syllabus) ===
+{state.get('context', '')}
+=== จบข้อมูลหลักสูตร ==="""
+
+    messages = [SystemMessage(content=system_prompt)] + list(state["messages"])
+    response = await invoke_with_fallback(messages)
+    return {"messages": [response]}
+
+# 6. Assemble the Graph
+workflow = StateGraph(AgentState)
+workflow.add_node("retrieve", retrieve_node)
+workflow.add_node("generate", generate_node)
+workflow.add_edge(START, "retrieve")
+workflow.add_edge("retrieve", "generate")
+workflow.add_edge("generate", END)
+
+app_graph = workflow.compile()
+
+# Convert pydantic messages to langchain messages
+def convert_messages(messages: List[Message]) -> List[BaseMessage]:
+    lc_messages = []
+    for msg in messages:
+        if msg.role == "user":
+            lc_messages.append(HumanMessage(content=msg.content))
+        elif msg.role == "assistant" or msg.role == "ai":
+            lc_messages.append(AIMessage(content=msg.content))
+        elif msg.role == "system":
+            lc_messages.append(SystemMessage(content=msg.content))
+    return lc_messages
+
+
+# --- API Routes ---
+
+@app.post("/api/chat")
+async def chat(request: ChatRequest):
+    if not request.messages:
+        raise HTTPException(status_code=400, detail="Messages array is required")
+    
+    lc_messages = convert_messages(request.messages)
+    
+    try:
+        # Invoke LangGraph
+        result = await app_graph.ainvoke({"messages": lc_messages, "context": ""})
+        
+        last_message = result["messages"][-1]
+        
+        # Save to Supabase
+        current_user_id = request.userId or 'anonymous'
+        user_msg = request.messages[-1].content
+        
+        try:
+            supabase.table('chat_history').insert([
+                {"user_id": current_user_id, "sender": "user", "message": user_msg},
+                {"user_id": current_user_id, "sender": "ai", "message": last_message.content}
+            ]).execute()
+        except Exception as db_err:
+            print("Supabase Save Error (Chat):", db_err)
+        
+        return {"reply": {"role": "assistant", "content": last_message.content}}
+        
+    except Exception as e:
+        print("LangGraph Error:", e)
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/chat/stream")
+async def chat_stream(request: ChatRequest):
+    if not request.messages:
+        raise HTTPException(status_code=400, detail="Messages array is required")
+    
+    lc_messages = convert_messages(request.messages)
+    current_user_id = request.userId or 'anonymous'
+    user_msg = request.messages[-1].content
+
+    async def generate_stream():
+        full_response = ""
+        try:
+            async for event in app_graph.astream_events({"messages": lc_messages, "context": ""}, version="v2"):
+                if event["event"] == "on_chat_model_stream":
+                    chunk = event["data"]["chunk"].content
+                    if chunk and isinstance(chunk, str):
+                        full_response += chunk
+                        yield chunk
+            
+            # Save to Supabase after stream finished
+            try:
+                supabase.table('chat_history').insert([
+                    {"user_id": current_user_id, "sender": "user", "message": user_msg},
+                    {"user_id": current_user_id, "sender": "ai", "message": full_response}
+                ]).execute()
+            except Exception as db_err:
+                print("Supabase Save Error (Stream):", db_err)
+            
+        except Exception as e:
+            print("LangGraph Stream Error:", e)
+            traceback.print_exc()
+            yield f"\n[Error occurred during streaming: {str(e)}]"
+
+    return StreamingResponse(generate_stream(), media_type="text/plain")
+
+
+@app.post("/api/generate-quiz")
+async def generate_quiz(request: GenerateRequest):
+    try:
+        print(f"---GENERATING QUIZ FOR: {request.chapterTitle}---")
+        context = get_subject_section(request.chapterTitle)
+
+        prompt = f"""You are an expert Computer Science examiner. 
+Create a 10-question multiple-choice quiz about the following topic: {request.chapterTitle}.
+Use the provided syllabus context to ensure accuracy. 
+Each question must have exactly 4 options.
+Each question must be classified into one of Bloom's Taxonomy domains: Remember, Understand, Apply, Analyze, Evaluate, Create.
+Try to distribute questions across different domains.
+
+IMPORTANT: All questions and options MUST be written in Thai language. 
+Only use English for technical terms that are commonly used as loanwords.
+Do NOT translate technical terms into Thai — keep them in English.
+
+You MUST respond ONLY with a valid JSON object in the following format:
+{{
+  "questions": [
+    {{
+      "question": "string",
+      "options": ["string", "string", "string", "string"],
+      "correctIndex": number,
+      "domain": "string"
+    }}
+  ]
+}}
+
+Context:
+{context}"""
+
+        result = await invoke_with_fallback([SystemMessage(content=prompt)])
+        return parse_json_from_text(result.content)
+        
+    except Exception as e:
+        print("Quiz Generation Error:", e)
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/generate-flashcards")
+async def generate_flashcards(request: GenerateRequest):
+    try:
+        print(f"---GENERATING FLASHCARDS FOR: {request.chapterTitle}---")
+        context = get_subject_section(request.chapterTitle)
+
+        prompt = f"""You are an expert Computer Science educator.
+Create exactly 10 flashcards about the following topic: {request.chapterTitle}.
+Use the provided syllabus context to ensure accuracy.
+
+Each flashcard should have:
+- "front": A clear, concise question or term (1-2 sentences max)
+- "back": A clear, concise answer or explanation (2-3 sentences max)
+
+IMPORTANT: All content MUST be written in Thai language.
+Only use English for technical terms that are commonly used as loanwords.
+Do NOT translate technical terms into Thai — keep them in English.
+
+You MUST respond ONLY with a valid JSON object in the following format. Do not include markdown code blocks or any explanation text:
+{{
+  "cards": [
+    {{
+      "front": "string",
+      "back": "string"
+    }}
+  ]
+}}
+
+Context:
+{context}"""
+
+        result = await invoke_with_fallback([SystemMessage(content=prompt)])
+        return parse_json_from_text(result.content)
+        
+    except Exception as e:
+        print("Flashcard Generation Error:", e)
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/generate-exam")
+async def generate_exam(request: GenerateExamRequest):
+    if not request.chapterTitles:
+        raise HTTPException(status_code=400, detail="chapterTitles array is required")
+
+    try:
+        print(f"---GENERATING EXAM FOR {len(request.chapterTitles)} CHAPTERS---")
+        
+        all_context = ""
+        for i, title in enumerate(request.chapterTitles):
+            section = get_subject_section(title)
+            all_context += f"\n\n--- {title} ---\n" + section
+
+        chapters_list_str = "\n".join([f"{i+1}. {t}" for i, t in enumerate(request.chapterTitles)])
+
+        prompt = f"""You are an expert Computer Science examiner creating a comprehensive final exam.
+Create exactly 20 multiple-choice questions covering ALL of the following chapters EVENLY (approximately 2 questions per chapter):
+
+{chapters_list_str}
+
+Each question must have:
+- exactly 4 options
+- a correctIndex (0-3)
+- a domain from Bloom's Taxonomy: Remember, Understand, Apply, Analyze, Evaluate, Create
+- a chapterTitle indicating which chapter the question belongs to (use the exact chapter title from the list above)
+
+Distribute the Bloom's domains as evenly as possible across all 20 questions.
+
+IMPORTANT: All questions and options MUST be written in Thai language.
+Only use English for technical terms.
+Do NOT translate technical terms into Thai — keep them in English.
+
+You MUST respond ONLY with a valid JSON object in the following format:
+{{
+  "questions": [
+    {{
+      "question": "string",
+      "options": ["string", "string", "string", "string"],
+      "correctIndex": number,
+      "domain": "string",
+      "chapterTitle": "string"
+    }}
+  ]
+}}
+
+Context:
+{all_context}"""
+
+        result = await invoke_with_fallback([SystemMessage(content=prompt)])
+        return parse_json_from_text(result.content)
+        
+    except Exception as e:
+        print("Exam Generation Error:", e)
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/generate-pdf-summary")
+async def generate_pdf_summary(request: PDFSummaryRequest):
+    try:
+        print("---GENERATING PDF SUMMARY---")
+
+        prompt = f"""You are an expert education analyst and university professor. 
+Analyze the following student exam performance data and create a deeply personalized, highly formal, and academic summary report in Thai language.
+
+Performance Data:
+- Final Exam Total Score: {request.examResults.get('score')} / {request.examResults.get('total')}
+
+- Chapter-wise Performance:
+{json.dumps(request.quizScores, ensure_ascii=False, indent=2)}
+
+- Cognitive Skills Breakdown (Bloom's Taxonomy):
+{json.dumps(request.radarScores, ensure_ascii=False, indent=2)}
+
+STRICT FORMATTING RULES:
+1. Use professional Markdown formatting (e.g., **Bold** for emphasis, bullet points (-) for lists).
+2. DO NOT use any emojis or graphical symbols.
+3. DO NOT use Markdown tables (|) or HTML tags (like <br>). They are strictly forbidden.
+4. Structure the report cleanly with clear sub-topics and well-indented bullet points. Every point MUST be on a new line.
+5. Use a highly formal, academic, and professional Thai tone (ทางการและสุภาพ).
+
+Please provide the report covering:
+1. บทวิเคราะห์ภาพรวม (Overall Performance)
+2. จุดแข็งรายวิชาและด้านการคิด (Strengths)
+3. สิ่งที่ควรพัฒนา (Areas for Growth)
+4. คำแนะนำส่วนบุคคลและขั้นตอนถัดไป (Personalized Advice & Next Steps)
+5. แผนการเรียนที่แนะนำ (Suggested Study Plan - Use a vertical list, NOT a table)
+
+Respond ONLY with the Markdown Thai text."""
+
+
+        response = await invoke_with_fallback([SystemMessage(content=prompt)])
+        return {"summary": response.content}
+        
+    except Exception as e:
+        print("PDF Summary Error:", e)
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+# --- SUPABASE ROUTES ---
+
+@app.get("/api/lessons")
+async def get_lessons():
+    try:
+        response = supabase.table('lessons').select('*').order('order_index').execute()
+        return response.data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/lessons")
+async def add_lesson(request: LessonRequest):
+    try:
+        response = supabase.table('lessons').insert([
+            {"title": request.title, "content": request.content, "order_index": request.order_index}
+        ]).execute()
+        return response.data[0] if response.data else None
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/complete-lesson")
+async def complete_lesson(request: CompleteLessonRequest):
+    try:
+        response = supabase.table('user_progress').upsert({
+            "user_id": request.userId,
+            "lesson_id": request.lessonId,
+            "is_completed": True,
+            "completed_at": datetime.utcnow().isoformat()
+        }).execute()
+        return {"message": "Lesson marked as completed", "data": response.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/user-progress/{userId}")
+async def get_user_progress(userId: str):
+    try:
+        response = supabase.table('user_progress').select('lesson_id').eq('user_id', userId).eq('is_completed', True).execute()
+        return [d['lesson_id'] for d in response.data]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/save-score")
+async def save_score(request: SaveScoreRequest):
+    try:
+        response = supabase.table('lesson_scores').insert([{
+            "user_id": request.userId,
+            "lesson_id": request.lessonId,
+            "type": request.type,
+            "score": request.score,
+            "total_questions": request.totalQuestions
+        }]).execute()
+        return {"message": "Score saved successfully", "data": response.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/save-exam-result")
+async def save_exam_result(request: SaveExamResultRequest):
+    try:
+        response = supabase.table('exam_results').insert([{
+            "user_id": request.userId,
+            "total_score": request.totalScore,
+            "total_questions": request.totalQuestions,
+            "category_scores": request.categoryScores,
+            "recommendation": request.recommendation
+        }]).execute()
+        return {"message": "Exam result saved successfully", "data": response.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 5000))
+    print(f"Starting server with model: {primary_model_name} (fallback: {fallback_model_name})")
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)

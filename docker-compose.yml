@@ -1,0 +1,32 @@
+
+services:
+  # --- Backend Service ---
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./backend:/app
+      - /app/__pycache__
+    restart: always
+
+  # --- Frontend Service ---
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:5000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - backend
+    restart: always

@@ -1,0 +1,522 @@
+{
+  "years": [
+    {
+      "year": 1,
+      "label": "ชั้นปีที่ 1",
+      "subtitle": "การปูพื้นฐานแนวคิดทางคอมพิวเตอร์",
+      "color": "#34C759",
+      "icon": "🟢",
+      "courses": [
+        {
+          "code": "09-131-101",
+          "name_en": "Introduction to Computer Science",
+          "name_th": "วิทยาการคอมพิวเตอร์เบื้องต้น",
+          "chapters": 10,
+          "slug": "intro-to-cs",
+          "topics": [
+            "ประวัติและวิวัฒนาการของคอมพิวเตอร์",
+            "สถาปัตยกรรมฮาร์ดแวร์และการทำงานของ CPU",
+            "ระบบตัวเลขและการแทนข้อมูล",
+            "การแทนข้อมูลสื่อดิจิทัล",
+            "พื้นฐานระบบปฏิบัติการและซอฟต์แวร์",
+            "อัลกอริทึมและการแก้ปัญหาเชิงคำนวณ",
+            "ระบบเครือข่ายและการสื่อสารข้อมูล",
+            "พื้นฐานความปลอดภัยสารสนเทศ",
+            "จริยธรรม สังคม และกฎหมายคอมพิวเตอร์",
+            "เทคโนโลยีอุบัติใหม่"
+          ]
+        },
+        {
+          "code": "09-131-102",
+          "name_en": "Structured Programming",
+          "name_th": "การเขียนโปรแกรมเชิงโครงสร้าง",
+          "chapters": 10,
+          "slug": "structured-programming",
+          "topics": [
+            "ปูพื้นฐานภาษาโปรแกรมและการติดตั้งสภาพแวดล้อม",
+            "ตัวแปร ชนิดข้อมูล และนิพจน์คณิตศาสตร์",
+            "การรับและแสดงผลข้อมูลอย่างมีประสิทธิภาพ",
+            "โครงสร้างควบคุมการตัดสินใจแบบซับซ้อน",
+            "การทำซ้ำและลูป",
+            "ฟังก์ชันและการประมวลผลแบบโมดูล",
+            "การส่งผ่านค่าในฟังก์ชันและการจัดการ Scope",
+            "อาเรย์และการจัดการข้อมูลชุด",
+            "การจัดการข้อความและสตริง",
+            "พื้นฐานการอ่านและเขียนไฟล์"
+          ]
+        },
+        {
+          "code": "09-131-103",
+          "name_en": "Discrete Structures",
+          "name_th": "โครงสร้างไม่ต่อเนื่อง",
+          "chapters": 9,
+          "slug": "discrete-structures",
+          "topics": [
+            "ตรรกศาสตร์และการพิสูจน์",
+            "ตัวบ่งปริมาณและการประยุกต์ใช้",
+            "ทฤษฎีเซตและการดำเนินการ",
+            "ความสัมพันธ์และคุณสมบัติทางลอจิก",
+            "ฟังก์ชันเชิงคณิตศาสตร์สำหรับคอมพิวเตอร์",
+            "ทฤษฎีกราฟพื้นฐานและการประยุกต์",
+            "โครงสร้างต้นไม้และการท่องไป",
+            "หลักการนับและความน่าจะเป็นแบบไม่ต่อเนื่อง",
+            "ความสัมพันธ์เวียนเกิดและการอุปนัยเชิงคณิตศาสตร์"
+          ]
+        },
+        {
+          "code": "09-132-101",
+          "name_en": "Functional Programming",
+          "name_th": "การเขียนโปรแกรมเชิงฟังก์ชัน",
+          "chapters": 8,
+          "slug": "functional-programming",
+          "topics": [
+            "แนวคิด Paradigm เชิงฟังก์ชัน",
+            "ฟังก์ชันในฐานะพลเมืองชั้นหนึ่ง",
+            "ความไม่เปลี่ยนแปลงและผลข้างเคียง",
+            "การประมวลผลรายการข้อมูล",
+            "การเรียกซ้ำและการพิสูจน์ความถูกต้อง",
+            "การจับคู่รูปแบบและชนิดข้อมูล",
+            "การประมวลผลแบบเชื่องช้า",
+            "พื้นฐาน Functors และ Monads"
+          ]
+        },
+        {
+          "code": "09-132-102",
+          "name_en": "Object Oriented Programming",
+          "name_th": "การเขียนโปรแกรมเชิงวัตถุ",
+          "chapters": 10,
+          "slug": "oop",
+          "topics": [
+            "พื้นฐานวัตถุและคลาส",
+            "การห่อหุ้มและการสิทธิ์เข้าถึง",
+            "คอนสตรัคเตอร์และการจัดการทรัพยากร",
+            "การสืบทอด",
+            "การพหุสัณฐาน",
+            "อินเทอร์เฟซและคลาสบทคัดย่อ",
+            "ความสัมพันธ์ของวัตถุเชิงลึก",
+            "การจัดการข้อผิดพลาดระดับวัตถุ",
+            "พื้นฐาน Design Patterns",
+            "หลักการ SOLID"
+          ]
+        },
+        {
+          "code": "09-132-103",
+          "name_en": "Digital and Boolean Algebra",
+          "name_th": "ดิจิทัลและพีชคณิตบูลีน",
+          "chapters": 7,
+          "slug": "digital-boolean-algebra",
+          "topics": [
+            "ระบบตัวเลขและพีชคณิตบูลีน",
+            "การลดรูปวงจรลอจิก",
+            "วงจรตรรกะแบบผสม",
+            "วงจรตรรกะแบบลำดับ",
+            "การออกแบบรีจิสเตอร์และตัวนับ",
+            "สถานะจำกัด",
+            "หน่วยความจำและ ADC/DAC"
+          ]
+        }
+      ]
+    },
+    {
+      "year": 2,
+      "label": "ชั้นปีที่ 2",
+      "subtitle": "ทักษะวิชาชีพหลัก",
+      "color": "#007AFF",
+      "icon": "🔵",
+      "courses": [
+        {
+          "code": "09-132-201",
+          "name_en": "Database Systems",
+          "name_th": "ระบบฐานข้อมูล",
+          "chapters": 9,
+          "slug": "database-systems",
+          "topics": [
+            "สถาปัตยกรรมและโมเดลฐานข้อมูล",
+            "การออกแบบด้วย ER-Model",
+            "โมเดลความสัมพันธ์",
+            "ภาษา SQL สำหรับการจัดการข้อมูล",
+            "การทำ Normalization",
+            "การจัดการ Transaction",
+            "การบริหารความปลอดภัย",
+            "การจัดการดัชนี",
+            "แนวคิดฐานข้อมูล NoSQL"
+          ]
+        },
+        {
+          "code": "09-131-201",
+          "name_en": "Numerical Methods",
+          "name_th": "ระเบียบวิธีเชิงตัวเลข",
+          "chapters": 8,
+          "slug": "numerical-methods",
+          "topics": [
+            "ความคลาดเคลื่อนในคำนวณคอมพิวเตอร์",
+            "การหารากของสมการ",
+            "ระบบสมการเชิงเส้น",
+            "การประมาณค่าในช่วง",
+            "การพยากรณ์ด้วย Curve Fitting",
+            "การหาอนุพันธ์เชิงตัวเลข",
+            "การอินทิเกรตเชิงตัวเลข",
+            "การแก้สมการเชิงอนุพันธ์"
+          ]
+        },
+        {
+          "code": "09-132-202",
+          "name_en": "Data Structures",
+          "name_th": "โครงสร้างข้อมูล",
+          "chapters": 10,
+          "slug": "data-structures",
+          "topics": [
+            "Linked Lists",
+            "Stacks & Queues",
+            "Binary Trees",
+            "Balanced Trees",
+            "Binary Heaps",
+            "Hashing",
+            "Graphs",
+            "Advanced Sorting",
+            "External Storage",
+            "การคัดเลือกโครงสร้างข้อมูล"
+          ]
+        },
+        {
+          "code": "09-132-203",
+          "name_en": "Computer Organization and Architecture",
+          "name_th": "องค์ประกอบและสถาปัตยกรรมคอมพิวเตอร์",
+          "chapters": 9,
+          "slug": "computer-org-arch",
+          "topics": [
+            "สถาปัตยกรรม CPU",
+            "ALU",
+            "หน่วยควบคุม",
+            "Pipelining",
+            "Memory Hierarchy",
+            "Virtual Memory",
+            "I/O Bus",
+            "Parallel Computing",
+            "ทิศทางสถาปัตยกรรมอนาคต"
+          ]
+        },
+        {
+          "code": "09-132-204",
+          "name_en": "Operating Systems",
+          "name_th": "ระบบปฏิบัติการ",
+          "chapters": 9,
+          "slug": "operating-systems",
+          "topics": [
+            "โครงสร้าง OS",
+            "การจัดการโพรเซส",
+            "CPU Scheduling",
+            "Semaphores",
+            "Deadlock Management",
+            "Memory Management",
+            "Paging",
+            "File Systems",
+            "OS Security"
+          ]
+        },
+        {
+          "code": "09-132-205",
+          "name_en": "Human-Computer Interaction",
+          "name_th": "ปฏิสัมพันธ์ระหว่างมนุษย์กับคอมพิวเตอร์",
+          "chapters": 7,
+          "slug": "hci",
+          "topics": [
+            "จิตวิทยาผู้ใช้",
+            "โมเดลการโต้ตอบ",
+            "กระบวนการออกแบบ UCD",
+            "Prototyping",
+            "Usability Evaluation",
+            "Accessibility",
+            "Modern HCI"
+          ]
+        },
+        {
+          "code": "09-132-206",
+          "name_en": "Artificial Intelligence",
+          "name_th": "ปัญญาประดิษฐ์",
+          "chapters": 10,
+          "slug": "artificial-intelligence",
+          "topics": [
+            "ปรัชญาและประเภท AI",
+            "ตัวแทนอัจฉริยะ",
+            "การค้นหาเชิงลึก",
+            "Heuristics",
+            "ฐานความรู้และลอจิก",
+            "Machine Learning",
+            "Neural Networks",
+            "การจัดการความคลุมเครือ",
+            "NLP & Vision",
+            "อนาคตและจริยธรรมของ AI"
+          ]
+        },
+        {
+          "code": "09-132-207",
+          "name_en": "Systems Analysis and Design",
+          "name_th": "การวิเคราะห์และออกแบบระบบ",
+          "chapters": 8,
+          "slug": "systems-analysis-design",
+          "topics": [
+            "วงจรชีวิตซอฟต์แวร์",
+            "การสืบค้นความต้องการ",
+            "Data Flow Diagrams",
+            "พจนานุกรมข้อมูลและความสมบูรณ์",
+            "OO Analysis",
+            "UML Behavior Models",
+            "สถาปัตยกรรมและ UI Design",
+            "การติดตั้งและขยายระบบ"
+          ]
+        },
+        {
+          "code": "09-132-208",
+          "name_en": "Analysis of Algorithms",
+          "name_th": "การวิเคราะห์อัลกอริทึม",
+          "chapters": 9,
+          "slug": "analysis-of-algorithms",
+          "topics": [
+            "ความซับซ้อนเชิงทฤษฎี",
+            "Divide & Conquer",
+            "Greedy Algorithms",
+            "Dynamic Programming",
+            "Graph Algorithms",
+            "Backtracking",
+            "Branch & Bound",
+            "อัลกอริทึมการประมาณค่า",
+            "หัวข้อปัญหา NP"
+          ]
+        },
+        {
+          "code": "09-132-209",
+          "name_en": "Data Communications",
+          "name_th": "การสื่อสารข้อมูล",
+          "chapters": 8,
+          "slug": "data-communications",
+          "topics": [
+            "องค์ประกอบสื่อสารข้อมูล",
+            "Physical Layer",
+            "Data Link Layer",
+            "MAC & Switching",
+            "Network Layer (IP)",
+            "Transport Layer (TCP/UDP)",
+            "Application Protocol",
+            "Network Management"
+          ]
+        },
+        {
+          "code": "09-132-210",
+          "name_en": "Web Application Development",
+          "name_th": "การพัฒนาเว็บแอปพลิเคชัน",
+          "chapters": 10,
+          "slug": "web-app-dev",
+          "topics": [
+            "พื้นฐานเครือข่ายเว็บและโพรโทคอล",
+            "HTML5 & CSS3 เชิงลึก",
+            "JavaScript Programming",
+            "SPA Framework Concepts",
+            "Backend Server Design",
+            "Database Integration",
+            "API Design (REST)",
+            "Web Security",
+            "State Management",
+            "Cloud Deployment"
+          ]
+        },
+        {
+          "code": "09-132-211",
+          "name_en": "SQL Technologies",
+          "name_th": "เทคโนโลยี SQL",
+          "chapters": 7,
+          "slug": "sql-technologies",
+          "topics": [
+            "Advanced SQL Syntax",
+            "Database Programming",
+            "Automatic Logic (Triggers)",
+            "Performance Indexing",
+            "SQL Architecture",
+            "Security and User Roles",
+            "Big Data SQL Concepts"
+          ]
+        },
+        {
+          "code": "09-132-212",
+          "name_en": "Mobile Application Development",
+          "name_th": "การพัฒนาแอปพลิเคชันมือถือ",
+          "chapters": 9,
+          "slug": "mobile-app-dev",
+          "topics": [
+            "สถาปัตยกรรมโมบายแอป",
+            "พื้นฐานการออกแบบ UI โมบาย",
+            "Mobile Lifecycle Management",
+            "Local Storage and SQLite",
+            "Remote API Consumption",
+            "Hardware Usage",
+            "GPS and Mapping",
+            "Notifications",
+            "Store Distribution"
+          ]
+        }
+      ]
+    },
+    {
+      "year": 3,
+      "label": "ชั้นปีที่ 3",
+      "subtitle": "วิชาชีพขั้นสูงและการประยุกต์ใช้",
+      "color": "#FF9500",
+      "icon": "🟠",
+      "courses": [
+        {
+          "code": "09-132-301",
+          "name_en": "Software Engineering",
+          "name_th": "วิศวกรรมซอฟต์แวร์",
+          "chapters": 8,
+          "slug": "software-engineering",
+          "topics": [
+            "นิยามวิศวกรรมซอฟต์แวร์",
+            "Agile & Scrum Framework",
+            "Software Design Hierarchy",
+            "Quality Control (QA)",
+            "Comprehensive Testing",
+            "Project Management Tools",
+            "Version Control (Git)",
+            "ระบบนิเวศการส่งมอบซอฟต์แวร์"
+          ]
+        },
+        {
+          "code": "09-132-302",
+          "name_en": "UX/UI Design",
+          "name_th": "การออกแบบ UX/UI",
+          "chapters": 7,
+          "slug": "ux-ui-design",
+          "topics": [
+            "พื้นฐานทางศิลปะและจิตวิทยา",
+            "Research and Persona",
+            "Visual Information Design",
+            "Prototyping Skills",
+            "Micro-interactions",
+            "Design Systems",
+            "Usability Evaluation"
+          ]
+        },
+        {
+          "code": "09-132-303",
+          "name_en": "Programming Languages",
+          "name_th": "ภาษาโปรแกรม",
+          "chapters": 8,
+          "slug": "programming-languages",
+          "topics": [
+            "รากฐานภาษาคอมพิวเตอร์",
+            "Lexical Analysis",
+            "Data Scoping and Memory",
+            "Internals of Processing",
+            "Programming Paradigms",
+            "Parameter กลไกการควบคุม",
+            "Compiler Construction",
+            "ภาษาคอมพิวเตอร์ยุคคลาวด์และถัดไป"
+          ]
+        },
+        {
+          "code": "09-132-304",
+          "name_en": "Modern Web Application Development",
+          "name_th": "การพัฒนาเว็บแอปพลิเคชันสมัยใหม่",
+          "chapters": 10,
+          "slug": "modern-web-app-dev",
+          "topics": [
+            "Modern JS & TS Concepts",
+            "React/Vue Framework Mastery",
+            "State Management (Redux/Pinia)",
+            "SSR and Static Generation",
+            "Progressive Web Apps (PWA)",
+            "Advanced Web Security",
+            "Real-time Communication",
+            "Docker Containers for Web",
+            "Search Engines and Analytics",
+            "CI/CD Pipelines for Web"
+          ]
+        },
+        {
+          "code": "09-132-305",
+          "name_en": "Cloud Computing",
+          "name_th": "การประมวลผลแบบคลาวด์",
+          "chapters": 9,
+          "slug": "cloud-computing",
+          "topics": [
+            "แนวคิดคลาวด์พื้นฐาน",
+            "Virtualization & Docker",
+            "Cloud Management (AWS/Azure)",
+            "Cloud Databases",
+            "Serverless Systems",
+            "Cloud Security & Rules",
+            "Load Balancing and Scaling",
+            "Backup and Recovery",
+            "Cloud Cost Mastery"
+          ]
+        },
+        {
+          "code": "09-132-306",
+          "name_en": "Computer Science Project 1",
+          "name_th": "โครงงานวิทยาการคอมพิวเตอร์ 1",
+          "chapters": 7,
+          "slug": "cs-project-1",
+          "topics": [
+            "การกำหนดเป้าหมายโครงการ",
+            "Literature Review",
+            "Feasibility Analysis",
+            "System Architectural Design",
+            "Tech Stack Selection",
+            "Project Planning",
+            "Proposal Documentation"
+          ]
+        }
+      ]
+    },
+    {
+      "year": 4,
+      "label": "ชั้นปีที่ 4",
+      "subtitle": "ความมั่นคงปลอดภัยและโครงงานจบการศึกษา",
+      "color": "#FF3B30",
+      "icon": "🔴",
+      "courses": [
+        {
+          "code": "09-132-401",
+          "name_en": "Computer Science Project 2",
+          "name_th": "โครงงานวิทยาการคอมพิวเตอร์ 2",
+          "chapters": 7,
+          "slug": "cs-project-2",
+          "topics": [
+            "ขั้นตอนการพัฒนาเชิงลึก",
+            "Testing and Tuning",
+            "Result Analysis",
+            "Documentation (Final Report)",
+            "Handover and Ethics",
+            "Final Presentation",
+            "Publication and Archiving"
+          ]
+        },
+        {
+          "code": "09-132-402",
+          "name_en": "Cybersecurity",
+          "name_th": "ความมั่นคงปลอดภัยไซเบอร์",
+          "chapters": 10,
+          "slug": "cybersecurity",
+          "topics": [
+            "หลักการพื้นฐานด้านความปลอดภัย",
+            "Cryptography Concepts",
+            "Network Security Tools",
+            "IDS/IPS Monitoring",
+            "OWASP Application Security",
+            "Penetration Testing Concept",
+            "Malware and Phishing Attack",
+            "Risk and Policy Management",
+            "Cyber Law and Ethics",
+            "Incident Scene and Recovery"
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "total_courses": 27,
+    "total_chapters": 236,
+    "curriculum": "วิทยาศาสตรบัณฑิต สาขาวิชาวิทยาการคอมพิวเตอร์ (ปรับปรุง 2569)",
+    "plan": "แผนสหกิจศึกษา"
+  }
+}
