@@ -66,6 +66,7 @@ export default function CoursePage() {
     setIsMounted(true);
   }, []);
 
+  // Fetch lessons from database
   useEffect(() => {
     async function loadLessons() {
       try {
@@ -369,7 +370,7 @@ export default function CoursePage() {
                       questions={quiz_questions} 
                       OnClose={() => set_is_viewing_quiz(false)} 
                       userId={user?.uid}
-                      lessonId={lessons.find(l => l.title === selected_topics[0])?.id}
+                      lessonId={lessons.find(l => l.title.trim() === selected_topics[0].trim())?.id}
                     />
                   ) : (
                     <QuizTab 

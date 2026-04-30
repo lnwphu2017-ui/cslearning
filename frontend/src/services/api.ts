@@ -196,5 +196,29 @@ export const apiService = {
       console.error('Error in saveExamResult:', error);
       throw error;
     }
+  },
+
+  // 10. PDF Generation via WeasyPrint Backend
+  async generatePdf(data: { 
+    title: string, 
+    sections: { title: string, content: string }[], 
+    chartImage?: string | null, 
+    footerText?: string 
+  }): Promise<Blob> {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/generate-pdf`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`PDF generation failed: ${errText}`);
+      }
+      return await res.blob();
+    } catch (error) {
+      console.error('Error in generatePdf:', error);
+      throw error;
+    }
   }
 };

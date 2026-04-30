@@ -11,6 +11,11 @@ from typing import List, Dict, Any, Optional, Sequence
 from typing_extensions import Annotated, TypedDict
 from dotenv import load_dotenv
 import operator
+import io
+import markdown
+from jinja2 import Environment, FileSystemLoader
+from weasyprint import HTML, CSS
+from fastapi.responses import Response
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, BaseMessage
@@ -133,6 +138,16 @@ class SaveExamResultRequest(BaseModel):
     totalQuestions: int
     categoryScores: List[Any]
     recommendation: str
+
+class PDFSection(BaseModel):
+    title: str
+    content: str
+
+class PDFGenerateRequest(BaseModel):
+    title: str
+    sections: List[PDFSection]
+    chartImage: Optional[str] = None
+    footerText: Optional[str] = "CSL AI Learning Dashboard - รายงานอัตโนมัติ"
 
 # Pydantic Schemas for LLM Structured Output
 class QuizQuestion(BaseModel):
@@ -474,6 +489,52 @@ Respond ONLY with the Markdown Thai text."""
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/generate-pdf")
+async def generate_pdf(request: PDFGenerateRequest):
+    try:
+        print(f"---GENERATING PDF: {request.title}---")
+        
+        # 1. Prepare data for template
+        template_data = {
+            "title": request.title,
+            "date": datetime.now().strftime("%d/%m/%Y %H:%M"),
+            "sections": [],
+            "chart_image": request.chartImage,
+            "footer_text": request.footerText
+        }
+        
+        # 2. Process sections (convert markdown to HTML)
+        for sec in request.sections:
+            html_content = markdown.markdown(sec.content)
+            template_data["sections"].append({
+                "title": sec.title,
+                "content": html_content
+            })
+            
+        # 3. Render HTML using Jinja2
+        env = Environment(loader=FileSystemLoader('.'))
+        template = env.get_template('templates/pdf_template.html')
+        rendered_html = template.render(template_data)
+        
+        # 4. Generate PDF using WeasyPrint
+        # Note: base_url is set to current directory to resolve font paths
+        pdf_file = io.BytesIO()
+        HTML(string=rendered_html, base_url=".").write_pdf(target=pdf_file)
+        pdf_file.seek(0)
+        
+        return Response(
+            content=pdf_file.getvalue(),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename=report.pdf"
+            }
+        )
+        
+    except Exception as e:
+        print("PDF Generation Error:", e)
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
 # --- SUPABASE ROUTES ---
 
 @app.get("/api/lessons")
@@ -517,16 +578,32 @@ async def get_user_progress(userId: str):
 
 @app.post("/api/save-score")
 async def save_score(request: SaveScoreRequest):
+    print(f"DEBUG: Saving score for user {request.userId}, lesson {request.lessonId}, type {request.type}, score {request.score}/{request.totalQuestions}")
     try:
-        response = supabase.table('lesson_scores').insert([{
+        # 1. Save score to lesson_scores
+        score_res = supabase.table('lesson_scores').insert([{
             "user_id": request.userId,
             "lesson_id": request.lessonId,
             "type": request.type,
             "score": request.score,
             "total_questions": request.totalQuestions
         }]).execute()
-        return {"message": "Score saved successfully", "data": response.data}
+        
+        # 2. Also mark as completed in user_progress
+        try:
+            supabase.table('user_progress').upsert({
+                "user_id": request.userId,
+                "lesson_id": request.lessonId,
+                "is_completed": True,
+                "completed_at": datetime.utcnow().isoformat()
+            }).execute()
+            print(f"DEBUG: Progress updated for {request.userId}")
+        except Exception as prog_err:
+            print(f"DEBUG: Error updating progress (non-critical): {prog_err}")
+
+        return {"message": "Score and progress saved successfully", "data": score_res.data}
     except Exception as e:
+        print(f"DEBUG: Error saving score: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/save-exam-result")

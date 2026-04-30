@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { apiService } from "@/services/api";
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from "recharts";
-import jsPDF from "jspdf";
 import { toPng } from "html-to-image";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -113,48 +112,66 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
   };
 
   const downloadPdf = async () => {
-    const element = document.getElementById("result-container");
-    if (!element) {
-      alert("ไม่พบข้อมูลสำหรับการสร้าง PDF");
-      return;
-    }
-
     setGeneratingPdf(true);
     try {
-      await new Promise(resolve => setTimeout(resolve, 800));
-
-      const dataUrl = await toPng(element, { 
-        cacheBust: true,
-        backgroundColor: '#ffffff',
-        pixelRatio: 2
-      });
-      
-      const pdf = new jsPDF("p", "mm", "a4");
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
-      
-      const imgProps = pdf.getImageProperties(dataUrl);
-      const imgWidth = pdfWidth - 20;
-      const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
-      
-      let heightLeft = imgHeight;
-      let position = 10;
-
-      pdf.addImage(dataUrl, "PNG", 10, position, imgWidth, imgHeight);
-      heightLeft -= (pdfHeight - 20);
-
-      while (heightLeft > 0) {
-        position = heightLeft - imgHeight + 10;
-        pdf.addPage();
-        pdf.addImage(dataUrl, "PNG", 10, position, imgWidth, imgHeight);
-        heightLeft -= (pdfHeight - 20);
+      // 1. จับภาพ Radar Chart เป็น Base64
+      let chartBase64: string | null = null;
+      const chartEl = document.getElementById("radar-chart-container");
+      if (chartEl) {
+        try {
+          chartBase64 = await toPng(chartEl, {
+            cacheBust: true,
+            backgroundColor: '#ffffff',
+            pixelRatio: 2
+          });
+        } catch (e) {
+          console.warn("Could not capture radar chart:", e);
+        }
       }
 
+      // 2. สร้างข้อมูล Section สำหรับ PDF
+      const topicLines = Object.entries(result_data.chapterStats)
+        .map(([name, stats]: [string, any]) => `- **${name}**: ${stats.correct} / ${stats.total} คะแนน`)
+        .join("\n");
+
+      const percentage = Math.round((final_score / questions.length) * 100);
+
+      const sections = [
+        {
+          title: "ผลคะแนนรวม (Overall Score)",
+          content: `**คะแนนรวม: ${final_score} / ${questions.length} (${percentage}%)**`
+        },
+        {
+          title: "วิเคราะห์รายหัวข้อ (Topic Analysis)",
+          content: topicLines
+        },
+        {
+          title: "คำแนะนำจาก AI (AI Personal Recommendation)",
+          content: result_data.recommendation || "ไม่มีคำแนะนำ"
+        }
+      ];
+
+      // 3. เรียก Backend เพื่อสร้าง PDF
+      const pdfBlob = await apiService.generatePdf({
+        title: `รายงานผลการสอบ - ${courseName || 'Course Examination'}`,
+        sections,
+        chartImage: chartBase64,
+        footerText: `CSL AI Learning Dashboard - ${courseName || 'Course'} - สร้างเมื่อ ${new Date().toLocaleString('th-TH')}`
+      });
+
+      // 4. ดาวน์โหลดไฟล์ PDF
+      const url = URL.createObjectURL(pdfBlob);
+      const a = document.createElement('a');
+      a.href = url;
       const cleanCourseName = courseName ? courseName.replace(/[^a-zA-Z0-9_-]/g, '-') : 'Course';
-      const fileName = `${cleanCourseName}-Exam-Report-${new Date().getTime()}.pdf`;
-      pdf.save(fileName);
+      a.download = `${cleanCourseName}-Exam-Report-${new Date().getTime()}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
     } catch (error) {
-      console.error("PDF Export Detailed Error:", error);
+      console.error("PDF Export Error:", error);
       alert(`ไม่สามารถสร้าง PDF ได้: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setGeneratingPdf(false);
@@ -264,7 +281,7 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
 
             {/* ➡️ Right Column (Radar & Recommendations) */}
             <div className="lg:col-span-7 flex flex-col gap-6">
-              <div className="bg-white border border-[var(--color-gray-100)] rounded-[32px] p-6 shadow-sm flex flex-col items-center justify-center">
+              <div id="radar-chart-container" className="bg-white border border-[var(--color-gray-100)] rounded-[32px] p-6 shadow-sm flex flex-col items-center justify-center">
                 <h4 className="text-[11px] font-bold text-[var(--color-gray-400)] uppercase tracking-widest mb-4">Bloom's Taxonomy Analytics</h4>
                 
                 <div className="w-full h-[280px] sm:h-[320px]">

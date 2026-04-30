@@ -10,3 +10,6 @@ sentence-transformers
 supabase==2.11.0
 python-dotenv
 pydantic
+weasyprint
+jinja2
+markdown

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ title }}</title>
+    <style>
+        @font-face {
+            font-family: 'Sarabun';
+            src: url('fonts/Sarabun-Regular.ttf') format('truetype');
+            font-weight: normal;
+            font-style: normal;
+        }
+
+        @font-face {
+            font-family: 'Sarabun';
+            src: url('fonts/Sarabun-Bold.ttf') format('truetype');
+            font-weight: bold;
+            font-style: normal;
+        }
+
+        @page {
+            size: A4 portrait;
+            margin: 20mm;
+            @bottom-right {
+                content: "หน้า " counter(page) " จาก " counter(pages);
+                font-family: 'Sarabun', sans-serif;
+                font-size: 10pt;
+            }
+        }
+
+        body {
+            font-family: 'Sarabun', sans-serif;
+            line-height: 1.6;
+            color: #333;
+            margin: 0;
+            padding: 0;
+            font-size: 14px;
+            background: white;
+            overflow: visible;
+        }
+
+        h1, h2, h3, h4, h5, h6 {
+            color: #1a56db;
+            margin-top: 1.5em;
+            margin-bottom: 0.5em;
+            page-break-after: avoid;
+            word-wrap: break-word;
+        }
+
+        h1 { font-size: 26px; border-bottom: 3px solid #1a56db; padding-bottom: 12px; }
+        h2 { font-size: 20px; border-left: 5px solid #1a56db; padding-left: 10px; }
+
+        .card {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 25px;
+            page-break-inside: avoid;
+            height: auto;
+            overflow: visible;
+        }
+
+        .summary-content {
+            margin-top: 10px;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            line-break: strict;
+            text-align: justify;
+            display: block;
+            height: auto;
+        }
+
+        /* สำคัญ: Markdown HTML tags */
+        .summary-content p {
+            margin: 0 0 1em 0;
+            display: block;
+        }
+
+        .summary-content ul, .summary-content ol {
+            margin: 0 0 1em 0;
+            padding-left: 25px;
+        }
+
+        .header-info {
+            text-align: right;
+            font-size: 12px;
+            color: #6b7280;
+            margin-bottom: 30px;
+        }
+
+        .chart-container {
+            text-align: center;
+            margin: 30px 0;
+            padding: 20px;
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            page-break-inside: avoid;
+        }
+
+        .chart-container img {
+            max-width: 100%;
+            height: auto;
+            max-height: 450px;
+        }
+
+        .section {
+            margin-bottom: 30px;
+            height: auto;
+            overflow: visible;
+        }
+    </style>
+</head>
+<body>
+    <div class="header-info">
+        รายงานสรุปผลการเรียนอัตโนมัติ (AI Assessment Report)<br>
+        วันที่ออกรายงาน: {{ date }}
+    </div>
+
+    <h1>{{ title }}</h1>
+
+    {% if chart_image %}
+    <div class="chart-container">
+        <h3 style="margin-top: 0; color: #4b5563;">แผนภูมิวิเคราะห์ทักษะ (Bloom's Taxonomy)</h3>
+        <img src="{{ chart_image }}" alt="Radar Chart">
+    </div>
+    {% endif %}
+
+    <div class="content">
+        {% for section in sections %}
+        <div class="section">
+            <h2>{{ section.title }}</h2>
+            <div class="card">
+                <div class="summary-content">
+                    {{ section.content | safe }}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    {% if footer_text %}
+    <div style="margin-top: 60px; text-align: center; font-size: 11px; color: #9ca3af; border-top: 1px solid #e5e7eb; padding-top: 20px;">
+        {{ footer_text }}
+    </div>
+    {% endif %}
+</body>
+</html>
