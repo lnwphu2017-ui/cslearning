@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { apiService } from "@/services/api";
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from "recharts";
+import jsPDF from "jspdf";
 import { toPng } from "html-to-image";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -27,6 +28,11 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
   const [user_answers, set_user_answers] = useState<(number | null)[]>(new Array(questions.length).fill(null));
   const [is_submitted, set_is_submitted] = useState(false);
   const [is_processing, set_is_processing] = useState(false);
+
+  // Safety check to prevent crash when mounted with empty data
+  if (!questions || questions.length === 0) {
+    return null;
+  }
   const [final_score, set_final_score] = useState(0);
   const [result_data, set_result_data] = useState<any>(null);
   const [generatingPdf, setGeneratingPdf] = useState(false);
@@ -112,66 +118,48 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
   };
 
   const downloadPdf = async () => {
+    const element = document.getElementById("result-container");
+    if (!element) {
+      alert("ไม่พบข้อมูลสำหรับการสร้าง PDF");
+      return;
+    }
+
     setGeneratingPdf(true);
     try {
-      // 1. จับภาพ Radar Chart เป็น Base64
-      let chartBase64: string | null = null;
-      const chartEl = document.getElementById("radar-chart-container");
-      if (chartEl) {
-        try {
-          chartBase64 = await toPng(chartEl, {
-            cacheBust: true,
-            backgroundColor: '#ffffff',
-            pixelRatio: 2
-          });
-        } catch (e) {
-          console.warn("Could not capture radar chart:", e);
-        }
+      await new Promise(resolve => setTimeout(resolve, 800));
+
+      const dataUrl = await toPng(element, { 
+        cacheBust: true,
+        backgroundColor: '#ffffff',
+        pixelRatio: 2
+      });
+      
+      const pdf = new jsPDF("p", "mm", "a4");
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      
+      const imgProps = pdf.getImageProperties(dataUrl);
+      const imgWidth = pdfWidth - 20;
+      const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
+      
+      let heightLeft = imgHeight;
+      let position = 10;
+
+      pdf.addImage(dataUrl, "PNG", 10, position, imgWidth, imgHeight);
+      heightLeft -= (pdfHeight - 20);
+
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight + 10;
+        pdf.addPage();
+        pdf.addImage(dataUrl, "PNG", 10, position, imgWidth, imgHeight);
+        heightLeft -= (pdfHeight - 20);
       }
 
-      // 2. สร้างข้อมูล Section สำหรับ PDF
-      const topicLines = Object.entries(result_data.chapterStats)
-        .map(([name, stats]: [string, any]) => `- **${name}**: ${stats.correct} / ${stats.total} คะแนน`)
-        .join("\n");
-
-      const percentage = Math.round((final_score / questions.length) * 100);
-
-      const sections = [
-        {
-          title: "ผลคะแนนรวม (Overall Score)",
-          content: `**คะแนนรวม: ${final_score} / ${questions.length} (${percentage}%)**`
-        },
-        {
-          title: "วิเคราะห์รายหัวข้อ (Topic Analysis)",
-          content: topicLines
-        },
-        {
-          title: "คำแนะนำจาก AI (AI Personal Recommendation)",
-          content: result_data.recommendation || "ไม่มีคำแนะนำ"
-        }
-      ];
-
-      // 3. เรียก Backend เพื่อสร้าง PDF
-      const pdfBlob = await apiService.generatePdf({
-        title: `รายงานผลการสอบ - ${courseName || 'Course Examination'}`,
-        sections,
-        chartImage: chartBase64,
-        footerText: `CSL AI Learning Dashboard - ${courseName || 'Course'} - สร้างเมื่อ ${new Date().toLocaleString('th-TH')}`
-      });
-
-      // 4. ดาวน์โหลดไฟล์ PDF
-      const url = URL.createObjectURL(pdfBlob);
-      const a = document.createElement('a');
-      a.href = url;
       const cleanCourseName = courseName ? courseName.replace(/[^a-zA-Z0-9_-]/g, '-') : 'Course';
-      a.download = `${cleanCourseName}-Exam-Report-${new Date().getTime()}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
+      const fileName = `${cleanCourseName}-Exam-Report-${new Date().getTime()}.pdf`;
+      pdf.save(fileName);
     } catch (error) {
-      console.error("PDF Export Error:", error);
+      console.error("PDF Export Detailed Error:", error);
       alert(`ไม่สามารถสร้าง PDF ได้: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setGeneratingPdf(false);
@@ -281,7 +269,7 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
 
             {/* ➡️ Right Column (Radar & Recommendations) */}
             <div className="lg:col-span-7 flex flex-col gap-6">
-              <div id="radar-chart-container" className="bg-white border border-[var(--color-gray-100)] rounded-[32px] p-6 shadow-sm flex flex-col items-center justify-center">
+              <div className="bg-white border border-[var(--color-gray-100)] rounded-[32px] p-6 shadow-sm flex flex-col items-center justify-center">
                 <h4 className="text-[11px] font-bold text-[var(--color-gray-400)] uppercase tracking-widest mb-4">Bloom's Taxonomy Analytics</h4>
                 
                 <div className="w-full h-[280px] sm:h-[320px]">
@@ -326,7 +314,7 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
   return (
     <div className="h-full flex flex-col animate-in fade-in duration-700 overflow-hidden">
       {/* 🟢 HEADER (Static at top) */}
-      <div className="flex items-center justify-between bg-white px-6 md:px-8 lg:px-12 py-4 z-10 shrink-0">
+      <div className="flex items-center justify-between bg-white px-6 md:px-8 lg:px-12 py-2 z-10 shrink-0">
         <div>
           <h2 className="text-xl font-bold text-[var(--color-black)] leading-tight">Course Examination</h2>
           <p className="text-[10px] text-[var(--color-gray-400)] font-bold uppercase tracking-widest mt-1">
@@ -347,9 +335,9 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
         <div className="absolute top-0 right-0 w-8 h-6 bg-white z-[60] pointer-events-none" />
         <div className="absolute bottom-0 right-0 w-8 h-6 bg-white z-[60] pointer-events-none" />
 
-        <div className="h-full overflow-y-auto premium-scrollbar px-6 md:px-8 lg:px-12 pt-6 pb-20 w-full">
+        <div className="h-full overflow-y-auto premium-scrollbar px-6 md:px-8 lg:px-12 pt-2 pb-16 w-full">
           {questions.map((q, q_idx) => (
-            <div key={q_idx} className="bg-white border border-[var(--color-gray-100)] rounded-[32px] p-4 md:p-6 transition-all hover:border-[var(--color-gray-200)] hover:shadow-[0_4px_20px_-5px_rgba(0,0,0,0.03)] mb-2">
+            <div key={q_idx} className="bg-white border border-[var(--color-gray-100)] rounded-[24px] p-3 md:p-4 transition-all hover:border-[var(--color-gray-200)] hover:shadow-[0_4px_20px_-5px_rgba(0,0,0,0.03)] mb-2">
               <div className="flex gap-4 mb-3">
                 <span className="text-base font-bold text-[var(--color-black)] shrink-0">{q_idx + 1}.</span>
                 <h3 className="text-base font-medium text-[var(--color-black)] leading-snug">{q.question}</h3>

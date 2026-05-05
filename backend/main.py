@@ -452,31 +452,19 @@ async def generate_pdf_summary(request: PDFSummaryRequest):
     try:
         print("---GENERATING PDF SUMMARY---")
 
-        prompt = f"""You are an expert education analyst and university professor. 
-Analyze the following student exam performance data and create a deeply personalized, highly formal, and academic summary report in Thai language.
+        prompt = f"""You are an expert education analyst. 
+Analyze the performance data and create an EXTREMELY CONCISE, one-page summary report in Thai.
+STRICT LIMIT: MAXIMUM 150 WORDS. 
+The entire output must be very short so it can fit on a single page with a chart and scores.
 
-Performance Data:
-- Final Exam Total Score: {request.examResults.get('score')} / {request.examResults.get('total')}
+Data:
+- Score: {request.examResults.get('score')} / {request.examResults.get('total')}
+- Topics: {json.dumps(request.quizScores, ensure_ascii=False)}
+- Skills: {json.dumps(request.radarScores, ensure_ascii=False)}
 
-- Chapter-wise Performance:
-{json.dumps(request.quizScores, ensure_ascii=False, indent=2)}
-
-- Cognitive Skills Breakdown (Bloom's Taxonomy):
-{json.dumps(request.radarScores, ensure_ascii=False, indent=2)}
-
-STRICT FORMATTING RULES:
-1. Use professional Markdown formatting (e.g., **Bold** for emphasis, bullet points (-) for lists).
-2. DO NOT use any emojis or graphical symbols.
-3. DO NOT use Markdown tables (|) or HTML tags (like <br>). They are strictly forbidden.
-4. Structure the report cleanly with clear sub-topics and well-indented bullet points. Every point MUST be on a new line.
-5. Use a highly formal, academic, and professional Thai tone (ทางการและสุภาพ).
-
-Please provide the report covering:
-1. บทวิเคราะห์ภาพรวม (Overall Performance)
-2. จุดแข็งรายวิชาและด้านการคิด (Strengths)
-3. สิ่งที่ควรพัฒนา (Areas for Growth)
-4. คำแนะนำส่วนบุคคลและขั้นตอนถัดไป (Personalized Advice & Next Steps)
-5. แผนการเรียนที่แนะนำ (Suggested Study Plan - Use a vertical list, NOT a table)
+Structure:
+1. สรุปภาพรวมและจุดแข็ง (Concise Summary)
+2. แนวทางพัฒนา (Key Improvements)
 
 Respond ONLY with the Markdown Thai text."""
 

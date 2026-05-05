@@ -282,6 +282,29 @@ button:active,
   transition: all 0.3s ease;
 }
 
+/* ===== Lesson Content — ย่อหน้าแบบตำราวิชาการไทย ===== */
+.lesson-content p {
+  text-indent: 2.5em;
+  margin-bottom: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.lesson-content h1,
+.lesson-content h2 {
+  text-indent: 0;
+  margin-top: 1.8rem;
+  margin-bottom: 0.6rem;
+}
+
+.lesson-content h1 + p,
+.lesson-content h2 + p {
+  margin-top: 0.4rem;
+}
+
+.lesson-content h1:first-child {
+  margin-top: 0;
+}
+
 /* ===== Markdown Rendering (Premium) ===== */
 .markdown-prose {
   line-height: 1.6;

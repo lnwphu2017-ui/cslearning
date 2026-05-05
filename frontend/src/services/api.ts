@@ -57,12 +57,12 @@ export const apiService = {
   },
 
   // 2. Quiz Generation (direct to backend - takes 30-60s)
-  async generateQuiz(chapterTitle: string) {
+  async generateQuiz(chapterTitle: string, content?: string) {
     try {
       const res = await fetch(`${BACKEND_URL}/api/generate-quiz`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chapterTitle })
+        body: JSON.stringify({ chapterTitle, content })
       });
       if (!res.ok) throw new Error('Network response was not ok');
       return await res.json();
@@ -73,12 +73,12 @@ export const apiService = {
   },
 
   // 3. Flashcard Generation (direct to backend - takes 30-60s)
-  async generateFlashcards(chapterTitle: string) {
+  async generateFlashcards(chapterTitle: string, content?: string) {
     try {
       const res = await fetch(`${BACKEND_URL}/api/generate-flashcards`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chapterTitle })
+        body: JSON.stringify({ chapterTitle, content })
       });
       if (!res.ok) throw new Error('Network response was not ok');
       return await res.json();

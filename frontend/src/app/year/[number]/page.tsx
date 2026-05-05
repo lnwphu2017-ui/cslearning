@@ -10,9 +10,9 @@ interface YearPageProps {
 }
 
 /**
- * GenerateStaticParams — สร้าง Static pages สำหรับทั้ง 4 ชั้นปี
+ * generateStaticParams — สร้าง Static pages สำหรับทั้ง 4 ชั้นปี
  */
-export function GenerateStaticParams() {
+export function generateStaticParams() {
   return [
     { number: "1" },
     { number: "2" },
@@ -22,11 +22,14 @@ export function GenerateStaticParams() {
 }
 
 /**
- * GenerateMetadata — SEO metadata แต่ละชั้นปี
+ * generateMetadata — SEO metadata แต่ละชั้นปี
  */
 export async function generateMetadata({ params }: YearPageProps) {
   const { number } = await params;
   const year_number = parseInt(number);
+  
+  if (!courses_data || !courses_data.years) return { title: "Error — CSLearning" };
+  
   const year_data = courses_data.years.find((y) => y.year === year_number);
 
   if (!year_data) return { title: "Not Found — CSLearning" };
@@ -45,7 +48,7 @@ export default async function YearPage({ params }: YearPageProps) {
   const year_number = parseInt(number);
 
   /* ค้นหาข้อมูลชั้นปี */
-  const year_data = courses_data.years.find((y) => y.year === year_number);
+  const year_data = courses_data?.years?.find((y) => y.year === year_number);
   if (!year_data) notFound();
 
   const total_chapters = year_data.courses.reduce((sum, c) => sum + c.chapters, 0);

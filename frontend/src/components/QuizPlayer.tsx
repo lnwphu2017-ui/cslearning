@@ -7,6 +7,7 @@ interface Question {
   question: string;
   options: string[];
   correct_answer: number;
+  explanation?: string;
 }
 
 interface QuizPlayerProps {
@@ -19,17 +20,28 @@ interface QuizPlayerProps {
 export function QuizPlayer({ questions, OnClose, userId, lessonId }: QuizPlayerProps) {
   const [current_idx, set_current_idx] = useState(0);
   const [selected_option, set_selected_option] = useState<number | null>(null);
+  const [user_answers, set_user_answers] = useState<(number | null)[]>([]);
   const [score, set_score] = useState(0);
   const [is_finished, set_is_finished] = useState(false);
+  const [is_reviewing, set_is_reviewing] = useState(false);
   const [is_saving, set_is_saving] = useState(false);
+
+  // Safety check to prevent crash when mounted with empty data
+  if (!questions || questions.length === 0) {
+    return null;
+  }
 
   const HandleOptionClick = (idx: number) => {
     set_selected_option(idx);
   };
 
   const HandleNext = async () => {
-    // Calculate score for the current question
     const isCorrect = selected_option === questions[current_idx].correct_answer;
+    
+    // บันทึกคำตอบของผู้ใช้
+    const updatedAnswers = [...user_answers, selected_option];
+    set_user_answers(updatedAnswers);
+
     let finalScore = score;
     if (isCorrect) {
       finalScore += 1;
@@ -42,7 +54,6 @@ export function QuizPlayer({ questions, OnClose, userId, lessonId }: QuizPlayerP
     } else {
       set_is_finished(true);
       
-      // Save score to backend if logged in and lesson is known
       if (userId && lessonId) {
         set_is_saving(true);
         try {
@@ -63,8 +74,104 @@ export function QuizPlayer({ questions, OnClose, userId, lessonId }: QuizPlayerP
   };
 
   if (is_finished) {
+    if (is_reviewing) {
+      return (
+        <div className="h-full flex flex-col px-6 md:px-8 lg:px-12 py-4 animate-in fade-in zoom-in-95 duration-500 overflow-hidden">
+          <div className="flex items-center justify-between mb-4 shrink-0">
+            <h2 className="text-xl font-bold text-[var(--color-black)]">Review Answers</h2>
+            <button 
+              onClick={() => set_is_reviewing(false)}
+              className="p-2 text-[var(--color-gray-400)] hover:text-black transition-colors rounded-full hover:bg-[var(--color-gray-50)]"
+              title="Back to Summary"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
+
+          <div className="flex-1 min-h-0 overflow-hidden relative">
+            {/* 🛡️ INTERNAL COVER TRICK (Hiding Scrollbar Arrows) - Reduced height to not overlap content */}
+            <div className="absolute top-0 right-0 w-8 h-2 bg-white z-[60] pointer-events-none" />
+            <div className="absolute bottom-0 right-0 w-8 h-2 bg-white z-[60] pointer-events-none" />
+
+            <div className="absolute inset-0 overflow-y-auto premium-scrollbar pr-2 space-y-6 pb-10">
+              {questions.map((q, qIdx) => {
+              const userSelectedIdx = user_answers[qIdx];
+              const isCorrectAnswer = userSelectedIdx === q.correct_answer;
+              const correctLetter = ["A", "B", "C", "D"][q.correct_answer];
+              
+              return (
+                <div key={qIdx} className="border-b border-[var(--color-gray-100)] pb-6 last:border-0">
+                  <div className="flex items-center gap-3 mb-4">
+                     <span className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-white text-[11px] font-bold shadow-sm ${isCorrectAnswer ? 'bg-[var(--color-primary)]' : 'bg-[var(--color-gray-400)]'}`}>
+                      {isCorrectAnswer ? "✓" : "!"}
+                    </span>
+                    <h3 className="text-[15px] font-bold text-[var(--color-black)] leading-none">
+                      {qIdx + 1}. {q.question}
+                    </h3>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-2 pl-8">
+                    {q.options.map((opt, oIdx) => {
+                      const isOptionCorrect = oIdx === q.correct_answer;
+                      const isOptionSelected = oIdx === userSelectedIdx;
+                      
+                      let bgColor = "bg-white";
+                      let borderColor = "border-[var(--color-gray-100)]";
+                      let textColor = "text-[var(--color-gray-600)]";
+
+                      if (isOptionCorrect) {
+                        bgColor = "bg-[var(--color-primary)]/10";
+                        borderColor = "border-[var(--color-primary)]";
+                        textColor = "text-[var(--color-primary)] font-bold";
+                      } else if (isOptionSelected) {
+                        borderColor = "border-[var(--color-gray-400)]";
+                        textColor = "text-[var(--color-black)] font-medium line-through opacity-60";
+                      }
+
+                      return (
+                        <div 
+                          key={oIdx} 
+                          className={`flex items-center gap-3 p-2.5 rounded-xl border-2 text-[13px] transition-all ${bgColor} ${borderColor} ${textColor}`}
+                        >
+                          <span className={`w-6 h-6 shrink-0 rounded-md border flex items-center justify-center text-[10px] font-bold ${isOptionCorrect ? 'bg-[var(--color-primary)] border-[var(--color-primary)] text-white' : 'border-[var(--color-gray-200)] text-gray-400'}`}>
+                            {["A", "B", "C", "D"][oIdx]}
+                          </span>
+                          <span>{opt}</span>
+                        </div>
+                      );
+                    })}
+
+                    {/* แสดงคำอธิบายเฉพาะเมื่อตอบผิด */}
+                    {!isCorrectAnswer && q.explanation && (
+                      <div className="mt-2 p-3 bg-[var(--color-gray-50)] rounded-xl border-l-4 border-[var(--color-primary)]">
+                        <div className="text-[11px] font-bold text-[var(--color-primary)] uppercase tracking-wider mb-1">ทำไมถึงตอบ {correctLetter}?</div>
+                        <p className="text-[13px] text-[var(--color-gray-600)] italic leading-relaxed">{q.explanation}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            </div>
+          </div>
+          
+          <div className="pt-4 shrink-0 border-t border-[var(--color-gray-100)]">
+             <button
+              onClick={OnClose}
+              className="w-full py-4 bg-[var(--color-primary)] text-white rounded-2xl font-bold text-lg hover:brightness-110"
+            >
+              Back to Course
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     return (
-      <div className="h-full flex flex-col items-center justify-center pb-24 animate-in fade-in zoom-in-95 duration-500">
+      <div className="h-full flex flex-col items-center justify-center pb-12 animate-in fade-in zoom-in-95 duration-500">
         <h2 className="text-3xl font-bold text-[var(--color-black)] mb-1">Quiz Completed!</h2>
         <p className="text-[var(--color-gray-500)] mb-6">You've finished the assessment</p>
         
@@ -74,12 +181,20 @@ export function QuizPlayer({ questions, OnClose, userId, lessonId }: QuizPlayerP
           {is_saving && <div className="text-xs text-[var(--color-gray-400)] mt-2">Saving your score...</div>}
         </div>
 
-        <button
-          onClick={OnClose}
-          className="px-10 py-4 bg-[var(--color-primary)] text-white rounded-2xl font-bold text-lg hover:brightness-110 active:scale-95 transition-all"
-        >
-          Back to Course
-        </button>
+        <div className="flex gap-4 w-full max-w-md px-6">
+          <button
+            onClick={OnClose}
+            className="flex-1 py-4 border-2 border-[var(--color-gray-200)] text-[var(--color-gray-600)] rounded-2xl font-bold text-lg hover:bg-[var(--color-gray-50)] transition-all"
+          >
+            Back to Course
+          </button>
+          <button
+            onClick={() => set_is_reviewing(true)}
+            className="flex-1 py-4 bg-[var(--color-primary)] text-white rounded-2xl font-bold text-lg hover:brightness-110 active:scale-95 transition-all shadow-lg"
+          >
+            Review Answers
+          </button>
+        </div>
       </div>
     );
   }
@@ -88,9 +203,9 @@ export function QuizPlayer({ questions, OnClose, userId, lessonId }: QuizPlayerP
   const progress = ((current_idx + 1) / questions.length) * 100;
 
   return (
-    <div className="h-full flex flex-col px-6 md:px-8 lg:px-12 pt-4 md:pt-6 pb-20 animate-in fade-in duration-500 overflow-hidden w-full">
+    <div className="h-full flex flex-col px-6 md:px-8 lg:px-12 pt-2 md:pt-4 pb-16 animate-in fade-in duration-500 overflow-hidden w-full">
       {/* Top Progress */}
-      <div className="mb-6 shrink-0">
+      <div className="mb-4 shrink-0">
         <div className="flex items-center justify-between mb-3">
           <div className="text-[13px] font-bold text-[var(--color-primary)]">
             Question {current_idx + 1} <span className="text-[var(--color-gray-300)] font-normal">of {questions.length}</span>
@@ -108,21 +223,21 @@ export function QuizPlayer({ questions, OnClose, userId, lessonId }: QuizPlayerP
       </div>
 
       {/* Main Content Area: Question + Options */}
-      <div className="flex-1 flex flex-col overflow-hidden relative p-2 md:p-4">
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden relative p-1 md:p-2">
         {/* 🛡️ INTERNAL COVER TRICK (Hiding Scrollbar Arrows) */}
-        <div className="absolute top-0 right-0 w-8 h-6 bg-white z-[60] pointer-events-none" />
-        <div className="absolute bottom-0 right-0 w-8 h-6 bg-white z-[60] pointer-events-none" />
+        <div className="absolute top-0 right-0 w-8 h-2 bg-white z-[60] pointer-events-none" />
+        <div className="absolute bottom-0 right-0 w-8 h-2 bg-white z-[60] pointer-events-none" />
 
         {/* Question */}
-        <div className="mb-6 shrink-0">
-          <h2 className="text-base md:text-lg font-normal text-[var(--color-black)] leading-tight">
+        <div className="mb-4 shrink-0">
+          <h2 className="text-sm md:text-base font-bold text-[var(--color-black)] leading-tight">
             {current_idx + 1}. {current_q.question}
           </h2>
         </div>
 
         {/* Options - Scrollable only if content exceeds space */}
-        <div className="h-full overflow-y-auto premium-scrollbar pr-2 pb-4">
-          <div className="grid grid-cols-1 gap-3">
+        <div className="flex-1 min-h-0 overflow-y-auto premium-scrollbar pr-2 pb-2">
+          <div className="grid grid-cols-1 gap-2">
             {current_q.options.map((option, idx) => {
               const letters = ["A", "B", "C", "D"];
               const is_selected = selected_option === idx;
@@ -141,12 +256,12 @@ export function QuizPlayer({ questions, OnClose, userId, lessonId }: QuizPlayerP
                 <button
                   key={idx}
                   onClick={() => HandleOptionClick(idx)}
-                  className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 transition-all text-left group ${border_color} ${bg_color} ${selected_option === null ? "hover:border-[var(--color-primary)] hover:bg-[var(--color-primary)]/5" : ""}`}
+                  className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left group ${border_color} ${bg_color} ${selected_option === null ? "hover:border-[var(--color-primary)] hover:bg-[var(--color-primary)]/5" : ""}`}
                 >
-                  <div className={`w-8 h-8 rounded-lg border-2 flex items-center justify-center shrink-0 text-sm font-bold transition-all ${is_selected ? "bg-[var(--color-primary)] border-[var(--color-primary)] text-white" : "border-[var(--color-gray-200)] text-[var(--color-gray-400)] group-hover:border-[var(--color-primary)] group-hover:text-[var(--color-primary)]"}`}>
+                  <div className={`w-7 h-7 rounded-lg border-2 flex items-center justify-center shrink-0 text-xs font-bold transition-all ${is_selected ? "bg-[var(--color-primary)] border-[var(--color-primary)] text-white" : "border-[var(--color-gray-200)] text-[var(--color-gray-400)] group-hover:border-[var(--color-primary)] group-hover:text-[var(--color-primary)]"}`}>
                     {letters[idx]}
                   </div>
-                  <span className={`text-base font-normal ${text_color}`}>{option}</span>
+                  <span className={`text-[15px] font-normal leading-tight ${text_color}`}>{option}</span>
                 </button>
               );
             })}
@@ -155,11 +270,11 @@ export function QuizPlayer({ questions, OnClose, userId, lessonId }: QuizPlayerP
       </div>
 
       {/* Footer - Fixed at bottom */}
-      <div className="pt-6 shrink-0 flex justify-end">
+      <div className="pt-4 shrink-0 flex justify-end">
         <button
           onClick={HandleNext}
           disabled={selected_option === null}
-          className={`px-10 py-3.5 rounded-2xl font-bold text-base transition-all ${selected_option === null 
+          className={`px-8 py-3 rounded-2xl font-bold text-sm transition-all ${selected_option === null 
             ? "bg-[var(--color-gray-100)] text-[var(--color-gray-400)] cursor-not-allowed" 
             : "bg-[var(--color-primary)] text-white hover:brightness-110 active:scale-95"}`}
         >

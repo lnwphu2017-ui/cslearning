@@ -1,9 +1,11 @@
 "use client";
+// Trigger rebuild for updated lessons.json
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import courses_data from "@/data/courses.json";
+import lessons_data from "@/data/lessons.json";
 import { apiService } from "@/services/api";
 import { InlineAIChat } from "@/components/InlineAIChat";
 import { FlashcardsTab } from "@/components/FlashcardsTab";
@@ -14,29 +16,139 @@ import { QuizPlayer } from "@/components/QuizPlayer";
 import { ExamTab } from "@/components/ExamTab";
 import { ExamPlayer } from "@/components/ExamPlayer";
 import { useAuth } from "@/contexts/AuthContext";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 const tabs = ["Content", "Flashcards", "Quiz", "Exam"];
+
+// --- Sub-component: Full chapter view (1 chapter = 1 scrollable page) ---
+function ChapterView({ 
+  chapterIdx, 
+  topics, 
+  lessons,
+  onChangeChapter
+}: { 
+  chapterIdx: number,
+  topics: string[],
+  lessons: any[],
+  onChangeChapter: (idx: number) => void
+}) {
+  const contentRef = React.useRef<HTMLDivElement>(null);
+  const topic = topics[chapterIdx] || "";
+  const matchingLesson = lessons.find((l: any) =>
+    (l.title || "").trim().normalize('NFC').replace(/\s+/g, '') ===
+    (topic || "").trim().normalize('NFC').replace(/\s+/g, '')
+  );
+
+  // Scroll to top when chapter changes
+  React.useEffect(() => {
+    contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [chapterIdx]);
+
+  const full_content = (matchingLesson?.content || "").replace(/\\n/g, '\n');
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Chapter Header */}
+      <div className="px-6 md:px-8 lg:px-12 pt-4 md:pt-6 pb-3 shrink-0 border-b border-[var(--color-gray-100)]">
+        <div className="flex items-center gap-3">
+          <span className="font-mono text-[13px] md:text-[15px] text-[var(--color-primary)] font-bold bg-[var(--color-primary)]/10 px-2.5 py-1 rounded-lg">
+            {chapterIdx + 1}
+          </span>
+          <h2 className="text-[15px] md:text-[18px] font-bold text-[var(--color-primary)] leading-snug">
+            {topic}
+          </h2>
+        </div>
+        <div className="text-[11px] md:text-[12px] text-[var(--color-gray-400)] mt-1.5">
+          บทที่ {chapterIdx + 1} จาก {topics.length}
+        </div>
+      </div>
+
+      {/* Scrollable Content */}
+      <div ref={contentRef} className="flex-1 overflow-y-auto premium-scrollbar px-6 md:px-8 lg:px-12 py-4 md:py-6">
+        {matchingLesson ? (
+          <div className="lesson-content prose prose-sm md:prose-base prose-gray max-w-none text-[var(--color-gray-600)] leading-[1.9] prose-headings:text-[var(--color-primary)] prose-headings:font-bold prose-h2:text-[17px] prose-h2:md:text-[20px] prose-h2:mt-6 prose-h2:mb-4 prose-h2:border-b prose-h2:border-[var(--color-gray-200)] prose-h2:pb-2 prose-p:my-3 prose-li:my-1 prose-strong:text-[var(--color-gray-800)]">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {full_content
+                .split('\n')
+                .filter((line: string, l_idx: number) => {
+                  if (l_idx === 0 && (line.startsWith('#') || line.trim() === topic.trim())) return false;
+                  return true;
+                })
+                .join('\n')}
+            </ReactMarkdown>
+          </div>
+        ) : (
+          <div className="text-[13px] md:text-[14px] text-gray-400 italic py-10 text-center">ยังไม่มีเนื้อหาสำหรับบทเรียนนี้</div>
+        )}
+      </div>
+
+      {/* Chapter Navigation (sticky bottom) */}
+      <div className="shrink-0 h-16 flex items-center justify-center gap-6 border-t border-[var(--color-gray-100)] bg-white/95 backdrop-blur-sm px-6">
+        <button
+          disabled={chapterIdx === 0}
+          onClick={() => onChangeChapter(chapterIdx - 1)}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl border text-[12px] font-bold transition-all ${chapterIdx === 0 ? 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed' : 'bg-white text-gray-600 hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] active:scale-95'}`}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+          Previous
+        </button>
+        <div className="text-[14px] font-black text-[var(--color-gray-800)] min-w-[60px] text-center">
+          {chapterIdx + 1} <span className="text-[var(--color-gray-200)] mx-1">/</span> {topics.length}
+        </div>
+        <button
+          disabled={chapterIdx === topics.length - 1}
+          onClick={() => onChangeChapter(chapterIdx + 1)}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl border text-[12px] font-bold transition-all ${chapterIdx === topics.length - 1 ? 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed' : 'bg-[var(--color-primary)] text-white border-[var(--color-primary)] hover:brightness-105 active:scale-95 shadow-[0_4px_12px_-2px_rgba(177,178,255,0.3)]'}`}
+        >
+          Next
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="9 18 15 12 9 6"></polyline>
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export default function CoursePage() {
   const params = useParams();
   const router = useRouter();
   const slug = params?.slug as string;
-
-  // Find course and its year courses
+  
   let course: any = null;
+  let course_year: number = 1;
   courses_data.years.forEach((y) => {
     const found = y.courses.find((c) => c.slug === slug);
     if (found) {
       course = found;
+      course_year = y.year;
     }
   });
 
   const [activeTab, setActiveTab] = useState("Content");
-  const [activeAccordion, setActiveAccordion] = useState<number | null>(0);
+  const [currentChapterIdx, setCurrentChapterIdx] = useState(0);
   const [isChatExpanded, setIsChatExpanded] = useState(false);
   const [isChatVisibleOnMobile, setIsChatVisibleOnMobile] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const [selected_topics, set_selected_topics] = useState<string[]>([]);
+
+  // Load active tab from localStorage
+  useEffect(() => {
+    const savedTab = localStorage.getItem(`activeTab_${slug}`);
+    if (savedTab && tabs.includes(savedTab)) {
+      setActiveTab(savedTab);
+    }
+    setIsMounted(true);
+  }, [slug]);
+
+  // Save active tab to localStorage
+  const HandleTabChange = (tab: string) => {
+    setActiveTab(tab);
+    localStorage.setItem(`activeTab_${slug}`, tab);
+  };
   
   const { user } = useAuth();
   const [lessons, setLessons] = useState<any[]>([]);
@@ -54,7 +166,8 @@ export default function CoursePage() {
   const [quiz_questions, set_quiz_questions] = useState<{
     question: string, 
     options: string[], 
-    correct_answer: number
+    correct_answer: number,
+    explanation?: string
   }[]>([]);
 
   // Exam States
@@ -63,23 +176,26 @@ export default function CoursePage() {
   const [exam_questions, set_exam_questions] = useState<any[]>([]);
 
   useEffect(() => {
-    setIsMounted(true);
-  }, []);
-
-  // Fetch lessons from database
-  useEffect(() => {
-    async function loadLessons() {
-      try {
-        const data = await apiService.getLessons();
-        setLessons(data);
-      } catch (err) {
-        console.error("Failed to load lessons:", err);
-      } finally {
-        setLoadingLessons(false);
-      }
+    // Load lessons from local JSON with robust matching
+    const current_slug = Array.isArray(slug) ? slug[0] : slug;
+    const year_key = `year${course_year}` as keyof typeof lessons_data;
+    const year_lessons = lessons_data[year_key] || {};
+    
+    // Try to find in current year first
+    let course_lessons = (year_lessons as any)[current_slug] || [];
+    
+    // Fallback: If not found, search in all years
+    if (course_lessons.length === 0) {
+      Object.values(lessons_data).forEach((year_data: any) => {
+        if (year_data[current_slug]) {
+          course_lessons = year_data[current_slug];
+        }
+      });
     }
-    loadLessons();
-  }, []);
+    
+    setLessons(course_lessons);
+    setLoadingLessons(false);
+  }, [slug, course_year]);
 
   // Fetch completed lessons when user is available
   useEffect(() => {
@@ -102,13 +218,11 @@ export default function CoursePage() {
     }
   }, [course, router]);
 
-  if (!course) {
+  if (!course || !isMounted) {
     return <div className="h-screen flex items-center justify-center">Loading...</div>;
   }
 
-  const toggleAccordion = (idx: number) => {
-    setActiveAccordion(activeAccordion === idx ? null : idx);
-  };
+
 
   const HandleToggleTopic = (topic: string) => {
     set_selected_topics(prev => 
@@ -134,9 +248,13 @@ export default function CoursePage() {
     
     set_is_generating_flashcards(true);
     
+    // Find content from lessons.json
+    const topic_name = selected_topics[0];
+    const lesson_content = lessons.find(l => l.title === topic_name)?.content || "";
+    
     try {
       // Send the first selected topic to the backend
-      const data = await apiService.generateFlashcards(selected_topics[0]);
+      const data = await apiService.generateFlashcards(topic_name, lesson_content);
       
       // Map API response to match the FlashcardsPlayer expected format
       const mappedCards = data.cards.map((c: any) => ({
@@ -159,14 +277,19 @@ export default function CoursePage() {
 
     set_is_generating_quiz(true);
 
+    // Find content from lessons.json
+    const topic_name = selected_topics[0];
+    const lesson_content = lessons.find(l => l.title === topic_name)?.content || "";
+
     try {
-      const data = await apiService.generateQuiz(selected_topics[0]);
+      const data = await apiService.generateQuiz(topic_name, lesson_content);
       
       // Map API response to match the QuizPlayer expected format
       const mappedQuestions = data.questions.map((q: any) => ({
         question: q.question,
         options: q.options,
-        correct_answer: q.correctIndex
+        correct_answer: q.correctIndex,
+        explanation: q.explanation // เพิ่มคำอธิบายเฉลย
       }));
       
       set_quiz_questions(mappedQuestions);
@@ -220,7 +343,7 @@ export default function CoursePage() {
             {tabs.map((tab) => (
               <button
                 key={tab}
-                onClick={() => setActiveTab(tab)}
+                onClick={() => HandleTabChange(tab)}
                 className={`flex-1 px-6 md:px-12 py-4 md:py-5 text-sm md:text-lg font-bold transition-all relative whitespace-nowrap ${activeTab === tab
                   ? 'text-[var(--color-primary)]'
                   : 'text-[var(--color-gray-400)] hover:text-[var(--color-primary)]'
@@ -236,174 +359,107 @@ export default function CoursePage() {
         </div>
 
         <div className="flex-1 relative overflow-hidden p-2 md:p-4">
-          {/* 🛡️ THE COVER TRICK (Hiding Scrollbar Arrows) */}
-          {activeTab === "Content" && (
-            <>
-              <div className="absolute top-0 right-0 w-8 h-6 bg-white z-[60] pointer-events-none" />
-              <div className="absolute bottom-0 right-0 w-8 h-6 bg-white z-[60] pointer-events-none" />
-            </>
-          )}
-
           <div className={`h-full ${
             activeTab === "Content"
-              ? "overflow-y-auto premium-scrollbar"
+              ? "overflow-hidden flex flex-col"
               : "overflow-hidden no-scrollbar flex flex-col"
           } relative z-0`}>
             {/* 📋 Wrapper สำหรับจัดกึ่งกลางเนื้อหาภายใน Tab */}
-            <div className="h-full flex flex-col">
-              {activeTab === "Content" && (
-                <div className="flex flex-col gap-3 md:gap-4 px-6 md:px-8 lg:px-12 pt-4 md:pt-6 pb-14">
-                  {course.topics.map((topic: string, idx: number) => {
-                    const isOpen = activeAccordion === idx;
-                    const matchingLesson = lessons.find(l => l.title === topic);
-                    const isCompleted = matchingLesson ? completedLessonIds.includes(matchingLesson.id) : false;
-                    return (
-                      <div
-                        key={idx}
-                        className={`border rounded-xl md:rounded-2xl overflow-hidden transition-all duration-300 ${isOpen ? "border-[var(--color-gray-300)] shadow-sm" : "border-[var(--color-gray-100)] hover:border-[var(--color-gray-200)] bg-[var(--color-gray-50)]/30"
-                          }`}
-                      >
-                        <button
-                          onClick={() => toggleAccordion(idx)}
-                          className={`flex items-center justify-between w-full px-4 md:px-6 py-3.5 md:py-5 text-left transition-colors ${isOpen ? 'bg-white' : ''}`}
-                        >
-                          <div className="flex items-center gap-3 md:gap-4">
-                            <span className={`text-[14px] md:text-[15px] transition-colors ${isOpen ? "text-[var(--color-primary)] font-bold" : "text-[var(--color-gray-700)] font-normal"}`}>
-                              <span className={`mr-2 md:mr-3 font-mono text-[12px] md:text-[14px] transition-colors ${isOpen ? "text-[var(--color-primary)]" : "text-[var(--color-gray-400)]"}`}>{idx + 1}</span>
-                              {topic}
-                            </span>
-                          </div>
-                          <svg
-                            width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-                            className={`transition-colors transform duration-300 ${isOpen ? "rotate-180 text-[var(--color-primary)]" : "text-[var(--color-gray-300)]"}`}
-                          >
-                            <polyline points="6 9 12 15 18 9"></polyline>
-                          </svg>
-                        </button>
-                        <div className={`transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] bg-white ${isOpen ? "max-h-[800px] opacity-100" : "max-h-0 opacity-0"
-                          }`}>
-                          <div className="px-4 md:px-6 pb-6 md:pb-8 pt-1 md:pt-2">
-                            {matchingLesson ? (
-                              <div className="text-[13.5px] md:text-[14.5px] text-[var(--color-gray-600)] leading-[1.8] mb-6 whitespace-pre-wrap">
-                                {matchingLesson.content}
-                              </div>
-                            ) : (
-                              <div className="text-[13px] md:text-[14px] text-gray-400 italic mb-6">
-                                ยังไม่มีเนื้อหาสำหรับบทเรียนนี้
-                              </div>
-                            )}
-                            
-                            <div className="flex items-center gap-3 md:gap-4 justify-between mt-4 border-t border-[var(--color-gray-100)] pt-4">
-                              <button
-                                onClick={(e) => { 
-                                  e.stopPropagation(); 
-                                  if (matchingLesson) handleCompleteLesson(matchingLesson.id);
-                                  else alert("ไม่พบข้อมูลบทเรียนในระบบ");
-                                }}
-                                disabled={isCompleted || !matchingLesson}
-                                className={`px-6 md:px-8 py-2 md:py-2.5 rounded-full font-black text-[12px] md:text-[13px] transition-all shadow-sm ${
-                                  isCompleted
-                                    ? "bg-[var(--color-gray-200)] text-[var(--color-gray-500)] cursor-not-allowed shadow-none"
-                                    : "bg-[var(--color-primary)] border-[var(--color-primary)] text-white hover:brightness-110"
-                                }`}
-                              >
-                                {isCompleted ? "✓ เรียนจบแล้ว" : "Mark as Complete"}
-                              </button>
-                              
-                              <div className="flex items-center gap-2">
-                                <button
-                                  disabled={idx === 0}
-                                  onClick={(e) => { e.stopPropagation(); setActiveAccordion(idx - 1); }}
-                                  className={`px-4 md:px-6 py-2 md:py-2.5 rounded-full border text-[12px] md:text-[13px] font-bold transition-all ${idx === 0 
-                                    ? 'bg-[var(--color-gray-50)] border-[var(--color-gray-100)] text-[var(--color-gray-300)] cursor-not-allowed' 
-                                    : 'bg-[var(--color-primary)] border-[var(--color-primary)] text-white hover:brightness-95'}`}
-                                >
-                                  Previous
-                                </button>
-                                <button
-                                  disabled={idx === course.topics.length - 1}
-                                  onClick={(e) => { e.stopPropagation(); setActiveAccordion(idx + 1); }}
-                                  className={`px-4 md:px-6 py-2 md:py-2.5 rounded-full border text-[12px] md:text-[13px] font-bold transition-all ${idx === course.topics.length - 1 
-                                    ? 'bg-[var(--color-gray-50)] border-[var(--color-gray-100)] text-[var(--color-gray-300)] cursor-not-allowed' 
-                                    : 'bg-[var(--color-primary)] border-[var(--color-primary)] text-white hover:brightness-95'}`}
-                                >
-                                  Next
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
+            <div className="h-full flex-1 min-h-0 flex flex-col">
+              
+              {/* Content Tab (Full Chapter View) */}
+              <div className={activeTab === "Content" ? "flex-1 flex flex-col overflow-hidden" : "hidden"}>
+                <ChapterView
+                  chapterIdx={currentChapterIdx}
+                  topics={course.topics}
+                  lessons={lessons}
+                  onChangeChapter={setCurrentChapterIdx}
+                />
+              </div>
+
+              {/* Flashcards Tab */}
+              <div className={activeTab === "Flashcards" ? "flex-1 flex flex-col" : "hidden"}>
+                <div className={is_generating_flashcards ? "block h-full" : "hidden"}>
+                  <FlashcardsLoading />
                 </div>
-              )}
+                <div className={!is_generating_flashcards && is_viewing_flashcards ? "block h-full" : "hidden"}>
+                  <FlashcardsPlayer 
+                    flashcards={flashcards} 
+                    OnClose={() => set_is_viewing_flashcards(false)} 
+                  />
+                </div>
+                <div className={!is_generating_flashcards && !is_viewing_flashcards ? "block h-full" : "hidden"}>
+                  <FlashcardsTab 
+                    topics={course.topics}
+                    selected_topics={selected_topics}
+                    OnToggle={HandleToggleTopic}
+                    OnGenerate={HandleGenerateFlashcards}
+                  />
+                </div>
+              </div>
 
-              {/* Flashcards Content */}
-              {activeTab === "Flashcards" && (
-                <>
-                  {is_generating_flashcards ? (
-                    <FlashcardsLoading />
-                  ) : is_viewing_flashcards ? (
-                    <FlashcardsPlayer 
-                      flashcards={flashcards} 
-                      OnClose={() => set_is_viewing_flashcards(false)} 
-                    />
-                  ) : (
-                    <FlashcardsTab 
-                      topics={course.topics}
-                      selected_topics={selected_topics}
-                      OnToggle={HandleToggleTopic}
-                      OnGenerate={HandleGenerateFlashcards}
-                    />
-                  )}
-                </>
-              )}
+              {/* Quiz Tab */}
+              <div className={activeTab === "Quiz" ? "flex-1 flex flex-col" : "hidden"}>
+                <div className={is_generating_quiz ? "block h-full" : "hidden"}>
+                  <FlashcardsLoading 
+                    title="Generating Quiz" 
+                    messages={[
+                      "กำลังสุ่มประเด็นสำคัญมาออกข้อสอบ...",
+                      "กำลังสร้างตัวเลือกที่ท้าทายความสามารถ...",
+                      "กำลังตรวจสอบความถูกต้องของเฉลย...",
+                      "กำลังคัดเลือกข้อสอบที่มีคุณภาพ...",
+                      "อีกสักครู่ ข้อสอบของคุณจะพร้อมแล้ว..."
+                    ]}
+                  />
+                </div>
+                <div className={!is_generating_quiz && is_viewing_quiz ? "block h-full" : "hidden"}>
+                  <QuizPlayer 
+                    questions={quiz_questions} 
+                    OnClose={() => set_is_viewing_quiz(false)} 
+                    userId={user?.uid}
+                    lessonId={lessons.find(l => l.title === selected_topics[0])?.id}
+                  />
+                </div>
+                <div className={!is_generating_quiz && !is_viewing_quiz ? "block h-full" : "hidden"}>
+                  <QuizTab 
+                    topics={course.topics}
+                    selected_topics={selected_topics}
+                    OnToggle={HandleToggleTopic}
+                    OnGenerate={HandleGenerateQuiz}
+                  />
+                </div>
+              </div>
 
-              {/* Quiz Content */}
-              {activeTab === "Quiz" && (
-                <>
-                  {is_generating_quiz ? (
-                    <FlashcardsLoading title="Generating Quiz" />
-                  ) : is_viewing_quiz ? (
-                    <QuizPlayer 
-                      questions={quiz_questions} 
-                      OnClose={() => set_is_viewing_quiz(false)} 
-                      userId={user?.uid}
-                      lessonId={lessons.find(l => l.title.trim() === selected_topics[0].trim())?.id}
-                    />
-                  ) : (
-                    <QuizTab 
-                      topics={course.topics}
-                      selected_topics={selected_topics}
-                      OnToggle={HandleToggleTopic}
-                      OnGenerate={HandleGenerateQuiz}
-                    />
-                  )}
-                </>
-              )}
-
-              {/* Exam Content */}
-              {activeTab === "Exam" && (
-                <>
-                  {is_generating_exam ? (
-                    <FlashcardsLoading title="Generating Examination" />
-                  ) : is_viewing_exam ? (
-                    <ExamPlayer 
-                      questions={exam_questions} 
-                      topics={course.topics}
-                      courseName={course.name_en}
-                      userId={user?.uid}
-                      OnClose={() => set_is_viewing_exam(false)} 
-                    />
-                  ) : (
-                    <ExamTab 
-                      course_name={course.name_en}
-                      OnGenerate={HandleGenerateExam}
-                    />
-                  )}
-                </>
-              )}
+              {/* Exam Tab */}
+              <div className={activeTab === "Exam" ? "flex-1 flex flex-col" : "hidden"}>
+                <div className={is_generating_exam ? "block h-full" : "hidden"}>
+                  <FlashcardsLoading 
+                    title="Generating Examination" 
+                    messages={[
+                      "กำลังรวบรวมเนื้อหาจากทุกบทเรียน...",
+                      "กำลังคัดเลือกข้อสอบให้ครอบคลุมหลักสูตร...",
+                      "กำลังสร้างชุดข้อสอบจำลองที่หลากหลาย...",
+                      "กำลังจัดเตรียมเฉลยและบทวิเคราะห์...",
+                      "ระบบกำลังประมวลผลข้อสอบไล่ (Final Exam)..."
+                    ]}
+                  />
+                </div>
+                <div className={!is_generating_exam && is_viewing_exam ? "block h-full" : "hidden"}>
+                  <ExamPlayer 
+                    questions={exam_questions} 
+                    topics={course.topics}
+                    courseName={course.name_en}
+                    userId={user?.uid}
+                    OnClose={() => set_is_viewing_exam(false)} 
+                  />
+                </div>
+                <div className={!is_generating_exam && !is_viewing_exam ? "block h-full" : "hidden"}>
+                  <ExamTab 
+                    course_name={course.name_en}
+                    OnGenerate={HandleGenerateExam}
+                  />
+                </div>
+              </div>
             </div>
           </div>
         </div>
