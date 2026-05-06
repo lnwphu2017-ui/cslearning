@@ -361,8 +361,10 @@ Create exactly 10 flashcards about the following topic: {request.chapterTitle}.
 Use the provided syllabus context to ensure accuracy.
 
 Each flashcard should have:
-- "front": A clear, concise question or term (1-2 sentences max)
-- "back": A clear, concise answer or explanation (2-3 sentences max)
+- "front": A clear, concise question or term (max 10 words)
+- "back": A VERY short, concise answer (max 15 words). Get straight to the point.
+
+FORMATTING: If a flashcard contains both an English technical term and Thai text, ALWAYS put the English term on the first line and the Thai explanation on the next line using '\n'.
 
 IMPORTANT: All content MUST be written in Thai language.
 Only use English for technical terms that are commonly used as loanwords.

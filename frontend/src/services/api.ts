@@ -148,16 +148,24 @@ export const apiService = {
     }
   },
 
-  // 7.5 Supabase - Get User Progress
-  async getUserProgress(userId: string) {
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/user-progress/${userId}`);
-      if (!res.ok) throw new Error('Failed to fetch user progress');
-      return await res.json(); // returns array of lesson_ids
-    } catch (error) {
-      console.error('Error in getUserProgress:', error);
-      throw error;
+  async getUserProgress(userId: string, retries = 3) {
+    if (!userId) return [];
+    const url = `${BACKEND_URL}/api/user-progress/${userId}`;
+    
+    for (let i = 0; i < retries; i++) {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('Failed to fetch user progress');
+        return await res.json();
+      } catch (error) {
+        if (i === retries - 1) {
+          console.error(`Final attempt failed for getUserProgress:`, error);
+          return []; // Return empty progress instead of crashing the UI
+        }
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1s before retry
+      }
     }
+    return [];
   },
 
   // 8. Supabase - Save Score

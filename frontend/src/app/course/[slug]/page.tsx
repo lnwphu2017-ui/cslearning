@@ -18,6 +18,10 @@ import { ExamPlayer } from "@/components/ExamPlayer";
 import { useAuth } from "@/contexts/AuthContext";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import rehypeRaw from "rehype-raw";
+import 'katex/dist/katex.min.css';
 
 const tabs = ["Content", "Flashcards", "Quiz", "Exam"];
 
@@ -26,19 +30,19 @@ function ChapterView({
   chapterIdx, 
   topics, 
   lessons,
-  onChangeChapter
+  onChangeChapter,
+  onKeywordClick
 }: { 
   chapterIdx: number,
   topics: string[],
   lessons: any[],
-  onChangeChapter: (idx: number) => void
+  onChangeChapter: (idx: number) => void,
+  onKeywordClick: (keyword: string) => void
 }) {
   const contentRef = React.useRef<HTMLDivElement>(null);
   const topic = topics[chapterIdx] || "";
-  const matchingLesson = lessons.find((l: any) =>
-    (l.title || "").trim().normalize('NFC').replace(/\s+/g, '') ===
-    (topic || "").trim().normalize('NFC').replace(/\s+/g, '')
-  );
+  const cleanString = (s: string) => (s || "").replace(/\s*\(.*?\)\s*/g, '').trim().normalize('NFC').replace(/\s+/g, '');
+  const matchingLesson = lessons.find((l: any) => cleanString(l.title) === cleanString(topic));
 
   // Scroll to top when chapter changes
   React.useEffect(() => {
@@ -47,19 +51,25 @@ function ChapterView({
 
   const full_content = (matchingLesson?.content || "").replace(/\\n/g, '\n');
 
+  // Pre-process content to make any (text) or (**text**) clickable
+  const step1 = full_content.replace(/(?<!\])\(([^)]+)\)/g, (match, p1) => {
+    const cleanTerm = p1.replace(/[*_]/g, '').trim();
+    // Encode the term for the URL part to handle spaces correctly
+    const encodedTerm = encodeURIComponent(cleanTerm);
+    return `[(${p1})](#click-${encodedTerm})`;
+  });
+
+  // Automatically bold English terms in double quotes to make them clickable via our 'strong' component
+  const processedContent = step1.replace(/"([A-Za-z0-9\s\-_]+)"/g, '**"$1"**');
+
   return (
     <div className="flex flex-col h-full">
       {/* Chapter Header */}
-      <div className="px-6 md:px-8 lg:px-12 pt-4 md:pt-6 pb-3 shrink-0 border-b border-[var(--color-gray-100)]">
-        <div className="flex items-center gap-3">
-          <span className="font-mono text-[13px] md:text-[15px] text-[var(--color-primary)] font-bold bg-[var(--color-primary)]/10 px-2.5 py-1 rounded-lg">
-            {chapterIdx + 1}
-          </span>
-          <h2 className="text-[15px] md:text-[18px] font-bold text-[var(--color-primary)] leading-snug">
-            {topic}
-          </h2>
-        </div>
-        <div className="text-[11px] md:text-[12px] text-[var(--color-gray-400)] mt-1.5">
+      <div className="px-6 md:px-8 lg:px-12 pt-2 md:pt-3 pb-2 shrink-0 border-b border-[var(--color-gray-100)]">
+        <h2 className="text-[15px] md:text-[18px] font-bold text-[var(--color-primary)] leading-snug">
+          {topic}
+        </h2>
+        <div className="text-[11px] md:text-[12px] text-[var(--color-gray-400)] mt-0.5">
           บทที่ {chapterIdx + 1} จาก {topics.length}
         </div>
       </div>
@@ -67,12 +77,95 @@ function ChapterView({
       {/* Scrollable Content */}
       <div ref={contentRef} className="flex-1 overflow-y-auto premium-scrollbar px-6 md:px-8 lg:px-12 py-4 md:py-6">
         {matchingLesson ? (
-          <div className="lesson-content prose prose-sm md:prose-base prose-gray max-w-none text-[var(--color-gray-600)] leading-[1.9] prose-headings:text-[var(--color-primary)] prose-headings:font-bold prose-h2:text-[17px] prose-h2:md:text-[20px] prose-h2:mt-6 prose-h2:mb-4 prose-h2:border-b prose-h2:border-[var(--color-gray-200)] prose-h2:pb-2 prose-p:my-3 prose-li:my-1 prose-strong:text-[var(--color-gray-800)]">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {full_content
+          <div className="lesson-content prose prose-slate max-w-none 
+            prose-headings:text-[var(--color-primary)] prose-headings:font-bold prose-headings:tracking-tight
+            prose-h2:text-[19px] md:prose-h2:text-[24px] prose-h2:mt-10 prose-h2:mb-6 prose-h2:border-b prose-h2:border-[var(--color-gray-100)] prose-h2:pb-3
+            prose-p:text-[var(--color-gray-700)] prose-p:leading-[1.8] prose-p:text-[15px] md:prose-p:text-[17px] prose-p:my-5
+            prose-strong:text-[var(--color-primary)] prose-strong:font-bold
+            prose-li:text-[var(--color-gray-700)] prose-li:my-2
+            prose-hr:border-[var(--color-gray-100)] prose-hr:my-10
+            prose-blockquote:border-l-4 prose-blockquote:border-[var(--color-primary)] prose-blockquote:bg-[var(--color-gray-50)] prose-blockquote:py-1 prose-blockquote:px-5 prose-blockquote:rounded-r-lg prose-blockquote:italic
+            ">
+            <ReactMarkdown 
+              remarkPlugins={[remarkGfm, remarkMath]} 
+              rehypePlugins={[rehypeKatex, rehypeRaw]}
+              components={{
+                strong: ({ children }) => {
+                  const getDeepText = (node: any): string => {
+                    if (typeof node === 'string') return node;
+                    if (Array.isArray(node)) return node.map(getDeepText).join('');
+                    if (node?.props?.children) return getDeepText(node.props.children);
+                    return '';
+                  };
+                  const term = getDeepText(children);
+                  return (
+                    <strong 
+                      onClick={() => onKeywordClick(`ช่วยอธิบายเพิ่มเติมเกี่ยวกับ "${term}" ในบริบทของบทเรียนนี้หน่อยครับ`)}
+                      className="cursor-pointer hover:text-[var(--color-primary)] hover:underline underline-offset-4 decoration-dashed transition-all"
+                      title={`คลิกเพื่อถามเกี่ยวกับ ${term}`}
+                    >
+                      {children}
+                    </strong>
+                  );
+                },
+                a: ({ href, children }) => {
+                  if (href?.startsWith('#click-')) {
+                    const term = decodeURIComponent(href.replace('#click-', ''));
+                    return (
+                      <span 
+                        onClick={() => onKeywordClick(`ช่วยอธิบายเพิ่มเติมเกี่ยวกับ "${term}" ในบริบทของบทเรียนนี้หน่อยครับ`)}
+                        className="cursor-pointer text-[var(--color-gray-700)] hover:text-[var(--color-primary)] hover:underline underline-offset-4 decoration-dashed transition-all"
+                        title={`คลิกเพื่อถามเกี่ยวกับ ${term}`}
+                      >
+                        {children}
+                      </span>
+                    );
+                  }
+                  return <a href={href} className="text-[var(--color-primary)] underline">{children}</a>;
+                },
+                blockquote: ({ children }) => {
+                  // Robustly extract all text content from children to detect "Keyword"
+                  const getDeepText = (node: any): string => {
+                    if (typeof node === 'string') return node;
+                    if (Array.isArray(node)) return node.map(getDeepText).join('');
+                    if (node?.props?.children) return getDeepText(node.props.children);
+                    return '';
+                  };
+                  
+                  const allText = getDeepText(children);
+                  const isKeyword = allText.includes('Keyword');
+
+                  if (isKeyword) {
+                    const rawKeywords = lessons[chapterIdx]?.content?.match(/\*\*Keyword\*\*:\s*(.*)/)?.[1] || "";
+                    const keywordsArray = rawKeywords.split(',');
+                    
+                    return (
+                      <blockquote className="border-l-4 border-[var(--color-primary)] bg-[var(--color-gray-50)] py-3 px-5 rounded-r-lg italic my-6">
+                        <strong className="not-italic">Keyword</strong>:{" "}
+                        {keywordsArray.map((kw, i) => (
+                          <span key={i}>
+                            <span
+                              onClick={() => onKeywordClick(`ช่วยอธิบายเพิ่มเติมเกี่ยวกับ "${kw.trim()}" ในบริบทของบทเรียนนี้หน่อยครับ`)}
+                              className="cursor-pointer hover:text-[var(--color-primary)] hover:underline underline-offset-4 decoration-dashed transition-all font-medium"
+                            >
+                              {kw.trim()}
+                            </span>
+                            {i < keywordsArray.length - 1 ? ", " : ""}
+                          </span>
+                        ))}
+                      </blockquote>
+                    );
+                  }
+                  return <blockquote className="border-l-4 border-[var(--color-primary)] bg-[var(--color-gray-50)] py-1 px-5 rounded-r-lg italic">{children}</blockquote>;
+                }
+              }}
+            >
+              {processedContent
                 .split('\n')
                 .filter((line: string, l_idx: number) => {
                   if (l_idx === 0 && (line.startsWith('#') || line.trim() === topic.trim())) return false;
+                  // Skip the original keyword line because we render it separately via blockquote component
+                  // but we actually want the blockquote component to handle it, so we keep it.
                   return true;
                 })
                 .join('\n')}
@@ -130,10 +223,11 @@ export default function CoursePage() {
 
   const [activeTab, setActiveTab] = useState("Content");
   const [currentChapterIdx, setCurrentChapterIdx] = useState(0);
-  const [isChatExpanded, setIsChatExpanded] = useState(false);
+  const [isChatExpanded, setIsChatExpanded] = useState(true);
   const [isChatVisibleOnMobile, setIsChatVisibleOnMobile] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const [selected_topics, set_selected_topics] = useState<string[]>([]);
+  const [externalChatPrompt, setExternalChatPrompt] = useState<string>("");
 
   // Load active tab from localStorage
   useEffect(() => {
@@ -330,9 +424,9 @@ export default function CoursePage() {
       {/* 1. Center Content Column */}
       <section className="flex-1 bg-white rounded-[20px] md:rounded-[24px] lg:rounded-[32px] border border-[var(--color-gray-300)] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.2)] flex flex-col overflow-hidden relative">
         {/* Fixed Header & Tabs */}
-        <div className="px-6 md:px-8 lg:px-14 pt-5 md:pt-8 shrink-0 bg-white z-20">
-          <div className="mb-4 md:mb-8">
-            <div className="text-[9px] md:text-[10px] font-bold tracking-[0.2em] text-[var(--color-gray-400)] uppercase mb-2 md:mb-3">
+        <div className="px-6 md:px-8 lg:px-14 pt-1.5 md:pt-2.5 shrink-0 bg-white z-20">
+          <div className="mb-1 md:mb-2">
+            <div className="text-[9px] md:text-[10px] font-bold tracking-[0.2em] text-[var(--color-gray-400)] uppercase mb-1">
               Course Module • {course.code}
             </div>
             <h1 className="text-xl md:text-2xl lg:text-4xl font-bold text-[var(--color-primary)] tracking-tight leading-[1.2]">
@@ -344,7 +438,7 @@ export default function CoursePage() {
               <button
                 key={tab}
                 onClick={() => HandleTabChange(tab)}
-                className={`flex-1 px-6 md:px-12 py-4 md:py-5 text-sm md:text-lg font-bold transition-all relative whitespace-nowrap ${activeTab === tab
+                className={`flex-1 px-6 md:px-12 py-1.5 md:py-2 text-sm md:text-lg font-bold transition-all relative whitespace-nowrap ${activeTab === tab
                   ? 'text-[var(--color-primary)]'
                   : 'text-[var(--color-gray-400)] hover:text-[var(--color-primary)]'
                   }`}
@@ -358,7 +452,7 @@ export default function CoursePage() {
           </div>
         </div>
 
-        <div className="flex-1 relative overflow-hidden p-2 md:p-4">
+        <div className="flex-1 relative overflow-hidden p-0.5 md:p-1">
           <div className={`h-full ${
             activeTab === "Content"
               ? "overflow-hidden flex flex-col"
@@ -374,6 +468,7 @@ export default function CoursePage() {
                   topics={course.topics}
                   lessons={lessons}
                   onChangeChapter={setCurrentChapterIdx}
+                  onKeywordClick={(kw) => setExternalChatPrompt(kw)}
                 />
               </div>
 
@@ -492,18 +587,7 @@ export default function CoursePage() {
         shrink-0 transition-all duration-400 ease-in-out flex flex-col bg-white rounded-[24px] md:rounded-[32px] border border-[var(--color-gray-300)] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.2)]
       `}>
         {/* Toggle Expand Button (Desktop only) */}
-        <button
-          onClick={() => setIsChatExpanded(!isChatExpanded)}
-          className="hidden md:flex absolute top-1/2 left-0 -translate-x-1/2 -translate-y-1/2 w-7 h-7 items-center justify-center bg-white border border-[var(--color-gray-200)] rounded-full shadow-sm text-[var(--color-gray-500)] hover:text-[var(--color-black)] z-40 transition-all opacity-0 group-hover:opacity-100 scale-90 group-hover:scale-105 cursor-pointer"
-          title={isChatExpanded ? "Collapse Chat" : "Expand Chat"}
-        >
-          <svg
-            width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
-            className={`transform transition-transform duration-500 ${isChatExpanded ? '' : 'rotate-180'}`}
-          >
-            <polyline points="9 18 15 12 9 6" />
-          </svg>
-        </button>
+
 
         {/* Close Button (Mobile only) */}
         <button 
@@ -520,6 +604,8 @@ export default function CoursePage() {
           <InlineAIChat
             courseName={course.name_en}
             initialTopic={course.topics_en ? course.topics_en[0] : course.topics[0]}
+            externalPrompt={externalChatPrompt}
+            onPromptProcessed={() => setExternalChatPrompt("")}
           />
         </div>
       </aside>

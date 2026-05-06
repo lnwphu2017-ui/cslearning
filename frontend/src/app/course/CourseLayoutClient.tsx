@@ -153,7 +153,7 @@ export default function CourseLayoutClient({ children }: { children: React.React
 
       {/* Page Content area (Children will be injected here) */}
       {/* ปรับ gap ให้เล็กลงในหน้าจอปกติเพื่อให้เหลือพื้นที่เนื้อหา */}
-      <div className="flex-1 flex flex-col md:flex-row gap-2 md:gap-3 lg:gap-4 p-2 md:p-3 lg:p-4 overflow-hidden relative">
+      <div className="flex-1 flex flex-col md:flex-row gap-1 md:gap-2 p-1 md:p-1.5 lg:p-2 overflow-hidden relative">
         {children}
       </div>
     </div>

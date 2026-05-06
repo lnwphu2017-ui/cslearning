@@ -43,7 +43,7 @@ export function FlashcardsPlayer({ flashcards, OnClose }: FlashcardsPlayerProps)
   const progress = ((current_idx + 1) / flashcards.length) * 100;
 
   return (
-    <div className="flex-1 flex flex-col min-h-[350px] px-4 md:px-6 pt-2 pb-8 animate-in fade-in zoom-in-95 duration-500">
+    <div className="flex-1 flex flex-col min-h-[350px] px-5.5 md:px-7 lg:px-[52px] pt-2 pb-8 animate-in fade-in zoom-in-95 duration-500">
       {/* Top Navigation & Progress */}
       <div className="mb-2">
         <div className="flex items-center justify-between mb-2">
@@ -76,16 +76,16 @@ export function FlashcardsPlayer({ flashcards, OnClose }: FlashcardsPlayerProps)
       </div>
 
       {/* The Card */}
-      <div className="flex-1 flex flex-col items-center justify-center py-2">
+      <div className="flex-1 flex flex-col items-center justify-center pt-12 pb-6">
         <div 
           onClick={() => set_is_flipped(!is_flipped)}
-          className="relative w-full max-w-[500px] aspect-[16/10] perspective-1000 cursor-pointer group"
+          className="relative w-full max-w-[90%] md:max-w-[700px] lg:max-w-[800px] aspect-[16/10] perspective-1000 cursor-pointer group"
         >
           <div className={`relative w-full h-full transition-all duration-700 preserve-3d ${is_flipped ? 'rotate-y-180' : ''}`}>
             
             {/* Front: Question */}
             <div className="absolute inset-0 backface-hidden bg-[var(--color-primary)] border border-[var(--color-primary)]/20 rounded-[24px] p-6 flex flex-col items-center justify-center text-center group-hover:-translate-y-0.5 transition-all">
-               <h3 className="text-lg md:text-2xl font-bold text-white leading-tight max-w-[90%]">
+               <h3 className="text-xl md:text-3xl lg:text-4xl font-bold text-white leading-tight max-w-[90%] whitespace-pre-wrap">
                  {current_card.question}
                </h3>
                <div className="absolute bottom-4 left-0 right-0 text-[9px] font-mono font-bold text-white/60 uppercase tracking-[0.2em] animate-pulse">
@@ -98,7 +98,7 @@ export function FlashcardsPlayer({ flashcards, OnClose }: FlashcardsPlayerProps)
                <div className="absolute top-4 left-0 right-0 text-[9px] font-mono font-bold text-[var(--color-primary)] uppercase tracking-[0.2em]">
                  Answer
                </div>
-               <p className="text-md md:text-xl text-[var(--color-gray-800)] leading-relaxed font-normal max-w-[90%]">
+               <p className="text-lg md:text-2xl lg:text-3xl text-[var(--color-gray-800)] leading-relaxed font-normal max-w-[90%] whitespace-pre-wrap">
                  {current_card.answer}
                </p>
             </div>

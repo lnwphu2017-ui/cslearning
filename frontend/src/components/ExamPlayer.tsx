@@ -29,13 +29,14 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
   const [is_submitted, set_is_submitted] = useState(false);
   const [is_processing, set_is_processing] = useState(false);
 
+  const [final_score, set_final_score] = useState(0);
+  const [result_data, set_result_data] = useState<any>(null);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
+
   // Safety check to prevent crash when mounted with empty data
   if (!questions || questions.length === 0) {
     return null;
   }
-  const [final_score, set_final_score] = useState(0);
-  const [result_data, set_result_data] = useState<any>(null);
-  const [generatingPdf, setGeneratingPdf] = useState(false);
 
   const HandleSelect = (q_idx: number, opt_idx: number) => {
     if (is_submitted || is_processing) return;
@@ -330,20 +331,20 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
       </div>
 
       {/* 🔵 QUESTIONS (Scrollable Area) */}
-      <div className="flex-1 relative overflow-hidden p-2 md:p-4">
+      <div className="flex-1 relative p-2 md:p-4 overflow-hidden">
         {/* 🛡️ INTERNAL COVER TRICK (Hiding Scrollbar Arrows) */}
         <div className="absolute top-0 right-0 w-8 h-6 bg-white z-[60] pointer-events-none" />
         <div className="absolute bottom-0 right-0 w-8 h-6 bg-white z-[60] pointer-events-none" />
 
-        <div className="h-full overflow-y-auto premium-scrollbar px-6 md:px-8 lg:px-12 pt-2 pb-16 w-full">
+        <div className="absolute inset-0 overflow-y-auto px-6 md:px-8 lg:px-12 pt-2 pb-16 w-full custom-exam-scrollbar">
           {questions.map((q, q_idx) => (
-            <div key={q_idx} className="bg-white border border-[var(--color-gray-100)] rounded-[24px] p-3 md:p-4 transition-all hover:border-[var(--color-gray-200)] hover:shadow-[0_4px_20px_-5px_rgba(0,0,0,0.03)] mb-2">
-              <div className="flex gap-4 mb-3">
-                <span className="text-base font-bold text-[var(--color-black)] shrink-0">{q_idx + 1}.</span>
-                <h3 className="text-base font-medium text-[var(--color-black)] leading-snug">{q.question}</h3>
+            <div key={q_idx} className="py-6 border-b border-[var(--color-gray-100)] last:border-0 transition-all">
+              <div className="flex gap-4 mb-4">
+                <span className="text-lg font-bold text-[var(--color-black)] shrink-0">{q_idx + 1}.</span>
+                <h3 className="text-lg font-normal text-[var(--color-black)] leading-snug">{q.question}</h3>
               </div>
 
-              <div className="grid grid-cols-1 gap-1.5 ml-0 md:ml-9">
+              <div className="grid grid-cols-1 gap-3 ml-0 md:ml-9">
                 {q.options.map((opt, o_idx) => {
                   const is_selected = user_answers[q_idx] === o_idx;
                   const letters = ["a.", "b.", "c.", "d."];
@@ -351,17 +352,17 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
                     <button
                       key={o_idx}
                       onClick={() => HandleSelect(q_idx, o_idx)}
-                      className="flex items-center gap-4 transition-all text-left group py-0.5"
+                      className="flex items-center gap-4 transition-all text-left group py-1.5"
                     >
-                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
+                      <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
                         is_selected 
                           ? "border-[var(--color-primary)] bg-[var(--color-primary)]" 
-                          : "border-[var(--color-gray-200)] bg-white group-hover:border-[var(--color-gray-300)]"
+                          : "border-[var(--color-gray-200)] bg-white group-hover:border-[var(--color-primary)]/40"
                       }`}>
-                        {is_selected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                        {is_selected && <div className="w-2 h-2 rounded-full bg-white" />}
                       </div>
-                      <span className={`text-[15px] transition-colors leading-snug ${is_selected ? "text-[var(--color-black)] font-medium" : "text-[var(--color-gray-600)]"}`}>
-                        <span className="mr-2 text-[var(--color-gray-400)] font-mono">{letters[o_idx]}</span>
+                      <span className={`text-[17px] transition-colors leading-snug ${is_selected ? "text-[var(--color-black)] font-medium" : "text-[var(--color-gray-600)]"}`}>
+                        <span className="mr-3 text-[var(--color-gray-400)] font-mono font-bold">{letters[o_idx]}</span>
                         {opt}
                       </span>
                     </button>

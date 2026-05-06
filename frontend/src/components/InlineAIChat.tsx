@@ -7,9 +7,11 @@ import { TypewriterEffect } from "./TypewriterEffect";
 interface InlineAIChatProps {
   courseName: string;
   initialTopic?: string;
+  externalPrompt?: string;
+  onPromptProcessed?: () => void;
 }
 
-export function InlineAIChat({ courseName, initialTopic }: InlineAIChatProps) {
+export function InlineAIChat({ courseName, initialTopic, externalPrompt, onPromptProcessed }: InlineAIChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([{
     role: 'assistant',
     content: `สวัสดีครับ! มีข้อสงสัยไหนในวิชา **${courseName}** ที่อยากให้ผมช่วยอธิบายเพิ่มเติมไหมครับ?`,
@@ -26,6 +28,26 @@ export function InlineAIChat({ courseName, initialTopic }: InlineAIChatProps) {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Handle external prompts (e.g. from clicking keywords)
+  useEffect(() => {
+    if (externalPrompt) {
+      const triggerMessage = async () => {
+        // Set input to the prompt
+        setInput(externalPrompt);
+        // We need to wait a tick for the state to update if we use 'input' inside handleSendMessage
+        // Or better, just call a shared function.
+      };
+      triggerMessage();
+    }
+  }, [externalPrompt]);
+
+  // Use another effect to notify parent that prompt was received
+  useEffect(() => {
+    if (externalPrompt && input === externalPrompt) {
+      onPromptProcessed?.();
+    }
+  }, [input, externalPrompt]);
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();

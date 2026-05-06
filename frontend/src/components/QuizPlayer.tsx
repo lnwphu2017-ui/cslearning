@@ -229,15 +229,15 @@ export function QuizPlayer({ questions, OnClose, userId, lessonId }: QuizPlayerP
         <div className="absolute bottom-0 right-0 w-8 h-2 bg-white z-[60] pointer-events-none" />
 
         {/* Question */}
-        <div className="mb-4 shrink-0">
-          <h2 className="text-sm md:text-base font-bold text-[var(--color-black)] leading-tight">
+        <div className="mb-6 shrink-0">
+          <h2 className="text-lg md:text-xl font-normal text-[var(--color-black)] leading-snug">
             {current_idx + 1}. {current_q.question}
           </h2>
         </div>
 
         {/* Options - Scrollable only if content exceeds space */}
         <div className="flex-1 min-h-0 overflow-y-auto premium-scrollbar pr-2 pb-2">
-          <div className="grid grid-cols-1 gap-2">
+          <div className="grid grid-cols-1 gap-4">
             {current_q.options.map((option, idx) => {
               const letters = ["A", "B", "C", "D"];
               const is_selected = selected_option === idx;
@@ -256,12 +256,12 @@ export function QuizPlayer({ questions, OnClose, userId, lessonId }: QuizPlayerP
                 <button
                   key={idx}
                   onClick={() => HandleOptionClick(idx)}
-                  className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left group ${border_color} ${bg_color} ${selected_option === null ? "hover:border-[var(--color-primary)] hover:bg-[var(--color-primary)]/5" : ""}`}
+                  className={`w-full flex items-center gap-5 p-5 md:p-6 rounded-xl border-2 transition-all text-left group ${border_color} ${bg_color} ${selected_option === null ? "hover:border-[var(--color-primary)] hover:bg-[var(--color-primary)]/5" : ""}`}
                 >
-                  <div className={`w-7 h-7 rounded-lg border-2 flex items-center justify-center shrink-0 text-xs font-bold transition-all ${is_selected ? "bg-[var(--color-primary)] border-[var(--color-primary)] text-white" : "border-[var(--color-gray-200)] text-[var(--color-gray-400)] group-hover:border-[var(--color-primary)] group-hover:text-[var(--color-primary)]"}`}>
+                  <div className={`w-12 h-12 rounded-xl border-2 flex items-center justify-center shrink-0 text-xl font-bold transition-all ${is_selected ? "bg-[var(--color-primary)] border-[var(--color-primary)] text-white" : "border-[var(--color-gray-200)] text-[var(--color-gray-400)] group-hover:border-[var(--color-primary)] group-hover:text-[var(--color-primary)]"}`}>
                     {letters[idx]}
                   </div>
-                  <span className={`text-[15px] font-normal leading-tight ${text_color}`}>{option}</span>
+                  <span className={`text-lg md:text-xl font-medium leading-snug ${text_color}`}>{option}</span>
                 </button>
               );
             })}
