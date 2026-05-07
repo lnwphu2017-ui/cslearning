@@ -77,51 +77,152 @@ function ChapterView({
   // We want to group related sub-components (like L1/L2/L3 Cache or ALU/CU) together.
   
   // First, find where the first dropdown should start (the first bold header)
-  const firstHeaderMatch = contentToProcess.match(/\n\n\*\*/);
-  let introPart = "";
-  let sectionsPart = "";
+  // 3. แยกส่วนเกริ่นนำ (Intro) และส่วนหัวข้อ (Dropdowns)
+  const allParts = contentToProcess.split(/\n\n(?=\*\*)/).filter(p => p.trim() !== "");
+  let introPartText = "";
+  let sectionCandidates: string[] = [];
+  let hasFoundFirstBox = false;
 
-  if (!firstHeaderMatch) {
-    introPart = contentToProcess;
-    sectionsPart = "";
-  } else {
-    const splitIdx = firstHeaderMatch.index!;
-    introPart = contentToProcess.substring(0, splitIdx).trim();
-    sectionsPart = contentToProcess.substring(splitIdx).trim();
-  }
-
-  const rawSections = sectionsPart.split(/\n\n(?=\*\*)/).filter(s => s.trim() !== "");
-  const mergedSections: string[] = [];
-  
-  if (rawSections.length > 0) {
-    let currentAccumulator = rawSections[0];
-
-    for (let i = 1; i < rawSections.length; i++) {
-      const section = rawSections[i];
-      const firstLine = section.split('\n')[0];
-      
-      // Determine if this section starts a NEW dropdown box
-      // Rule: New box if the header has English terminology in parentheses (at least 5 chars of English)
-      // AND it's not a numbered sub-item like L1, L2, L3 or a specific sub-component.
-      const engMatch = firstLine.match(/\(([^)]+)\)/);
-      const englishTerm = engMatch ? engMatch[1].replace(/[^a-zA-Z]/g, '') : "";
-      
-      const isMainSubject = englishTerm.length >= 5 && 
-                            !/L\d\s+Cache/i.test(firstLine) &&
-                            !/ALU|CU|Register/i.test(firstLine);
-
-      if (isMainSubject) {
-        mergedSections.push(currentAccumulator);
-        currentAccumulator = section;
+  allParts.forEach((part, idx) => {
+    const trimmedPart = part.trim();
+    // ถ้ายังไม่เจอกล่องแรก หรือส่วนนี้เป็น "บทที่..." ให้เอาไปไว้ใน Intro
+    if (!hasFoundFirstBox) {
+      if (trimmedPart.startsWith('**บทที่') || trimmedPart.startsWith('**Lesson')) {
+        introPartText += (introPartText ? '\n\n' : '') + trimmedPart;
+      } else if (!trimmedPart.startsWith('**')) {
+        introPartText += (introPartText ? '\n\n' : '') + trimmedPart;
       } else {
-        // Merge related or minor points into the current box
-        currentAccumulator += "\n\n" + section;
+        hasFoundFirstBox = true;
+        sectionCandidates.push(trimmedPart);
       }
+    } else {
+      sectionCandidates.push(trimmedPart);
     }
-    mergedSections.push(currentAccumulator);
-  }
+  });
 
-  const dropdownParts = mergedSections;
+
+
+  // 4. จัดกลุ่มหัวข้อ (Grouping Logic)
+  // แยกกล่องสำหรับหัวข้อหลัก และรวมหัวข้อย่อยที่เป็นรายละเอียด (เช่น ข้อจำกัด, ตัวอย่าง)
+  const groupedSections: { header: string; body: string }[] = [];
+
+  sectionCandidates.forEach((part) => {
+    const match = part.match(/^\*\*([^\*]+)\*\*(.*)/s);
+    if (match) {
+      // ล้างเครื่องหมาย * และช่องว่างทุกตัวที่อยู่ที่ขอบหน้าและหลัง
+      let header = match[1].replace(/^[* \s]+|[* \s]+$/g, '').trim();
+      let rawBody = match[2];
+
+      // 0. แก้ไขข้อผิดพลาดกรณีเนื้อหาย่อหน้าติดมากับชื่อหัวข้อ (Corrupted Headers)
+      // มักเกิดจากข้อมูลไม่มีการเว้นบรรทัดก่อนขึ้นหัวข้อใหม่ เช่น "...ขับเคลื่อนเครื่องจักร1. พีชคณิตบูลีน (Boolean Algebra)"
+      if (header.length > 40) {
+        // ค้นหารูปแบบ "ตัวเลข. หัวข้อ" หรือ "หัวข้อ (English)" ที่อยู่ท้ายสุดของข้อความ
+        const tailMatch = header.match(/(\d+\.\s+.*|\s[ก-๙a-zA-Z\s-]+\s*\([a-zA-Z\s-]+\))$/);
+        if (tailMatch) {
+          const trueHeader = tailMatch[0].trim();
+          const prefixText = header.substring(0, header.length - trueHeader.length).trim();
+          
+          // ตรวจสอบว่าเป็นข้อความที่ติดมาจริงๆ หรือไม่
+          const isNumberedHeader = /^\d+\./.test(trueHeader);
+          const hasParensInPrefix = prefixText.includes('(') && prefixText.includes(')');
+          
+          // ถ้ามีข้อความส่วนเกินที่ยาวพอสมควร และ (เป็นหัวข้อตัวเลข หรือ ส่วนเกินไม่มีวงเล็บภาษาอังกฤษ) ให้แยกออก
+          if (prefixText.length > 15 && (isNumberedHeader || !hasParensInPrefix)) {
+            header = trueHeader;
+            if (groupedSections.length > 0) {
+              groupedSections[groupedSections.length - 1].body += `\n\n${prefixText}`;
+            } else {
+              introPartText += `\n\n${prefixText}`;
+            }
+          }
+        }
+      }
+
+      // 1. ตรวจสอบคำขึ้นต้นที่บ่งบอกว่าเป็นส่วนขยายหรือประเภทย่อย (ควรถูกรวมกล่อง)
+      const isExtensionPrefix = 
+        header.startsWith('ทำไม') || 
+        header.startsWith('การทำงาน') || 
+        header.startsWith('หลักการ') ||
+        header.startsWith('ประเภท') ||
+        header.startsWith('ส่วนประกอบ') ||
+        header.startsWith('ข้อดี') ||
+        header.startsWith('ข้อเสีย') ||
+        header.startsWith('ประมวลผล') ||
+        header.startsWith('ปัญหา') ||
+        header.startsWith('ความแตกต่าง') ||
+        header.startsWith('ตัวอย่าง') ||
+        header.startsWith('แบบ') ||
+        header.startsWith('ชนิด') ||
+        header.startsWith('เทคนิค') ||
+        header.startsWith('ที่มี') || // เช่น "ที่มีความเร็ว..."
+        header.startsWith('โดย') ||  // เช่น "โดยแบ่งหน้าที่..."
+        header.startsWith('ซึ่ง');  // เช่น "ซึ่งอาศัย..."
+
+      // 2. ตรวจสอบความเกี่ยวเนื่องกับหัวข้อก่อนหน้า (Prefix Matching)
+      let isRelatedToPrevious = false;
+      if (groupedSections.length > 0) {
+        const prevHeader = groupedSections[groupedSections.length - 1].header;
+        const cleanPrev = prevHeader.replace(/\([^\)]*\)/g, '').trim();
+        const cleanCurr = header.replace(/\([^\)]*\)/g, '').trim();
+        
+        const keyTerm = cleanPrev.substring(0, 6);
+        if (keyTerm.length >= 3 && cleanCurr.startsWith(keyTerm)) {
+          isRelatedToPrevious = true;
+        }
+      }
+
+      // 3. หัวข้อย่อยเชิงเทคนิคหรือลำดับ
+      const isTechnicalSub = 
+        /^\d+\./.test(header) || 
+        /L\d\s+Cache/i.test(header) || 
+        /ALU|CU|Register/i.test(header);
+
+      // 4. ตรวจสอบลักษณะประโยค (ถ้าจบด้วย "ได้แก่" หรือ "ดังนี้" ไม่ควรเป็นหัวข้อกล่อง)
+      const isSentence = 
+        header.endsWith('ได้แก่') || 
+        header.endsWith('ดังนี้') ||
+        header.length > 100; // หัวข้อไม่ควรยาวเป็นประโยค
+
+      // ตัดสินใจว่าควรสร้างกล่องใหม่หรือไม่
+      const hasEnglishParens = header.includes('(') && header.includes(')');
+      const shouldStartNewBox = hasEnglishParens && !isExtensionPrefix && !isRelatedToPrevious && !isSentence;
+
+      // ถ้าเป็นกล่องใหม่ (หัวข้อหลัก) ให้ตัดข้อความ Subheading ที่อยู่บรรทัดเดียวกับหัวข้อทิ้ง
+      // แต่ถ้าเป็นหัวข้อย่อย (เช่น **ข้อจำกัด**) ให้เก็บข้อความบรรทัดนั้นไว้ เพราะคือเนื้อหาจริงๆ
+      if (shouldStartNewBox || groupedSections.length === 0) {
+        const firstNewlineMatch = rawBody.match(/^([^\n\r]*)([\n\r]+.*)?$/s);
+        if (firstNewlineMatch) {
+          const sameLineText = firstNewlineMatch[1];
+          if (sameLineText.trim().length > 0) {
+            rawBody = firstNewlineMatch[2] || "";
+          }
+        }
+      }
+      
+      let body = rawBody.trim();
+
+      if (groupedSections.length > 0 && (!shouldStartNewBox || isTechnicalSub)) {
+        // ถ้ารวมกล่อง
+        groupedSections[groupedSections.length - 1].body += `\n\n**${header}**\n${body}`;
+      } else if (shouldStartNewBox || groupedSections.length === 0) {
+        // สร้างกล่องใหม่
+        groupedSections.push({ header, body });
+      } else {
+        // รวมกล่อง
+        groupedSections[groupedSections.length - 1].body += `\n\n**${header}**\n${body}`;
+      }
+    } else if (groupedSections.length > 0) {
+      groupedSections[groupedSections.length - 1].body += '\n\n' + part.trim();
+    }
+  });
+
+  const dropdownParts = groupedSections;
+  let introPart = introPartText;
+  if (introPart.includes('---')) {
+    // ตัดเนื้อหาทุกอย่างที่อยู่ใต้เส้น --- ออก (เอาเฉพาะส่วนบนและเก็บเส้นไว้)
+    const parts = introPart.split('---');
+    introPart = parts[0].trim() + '\n\n---';
+  }
 
   const markdownComponents = {
     strong: ({ children }: any) => {
@@ -240,20 +341,16 @@ function ChapterView({
               {/* Dropdown Sections */}
               {dropdownParts.length > 0 && (
                 <div className="mt-10 space-y-4">
-                  {dropdownParts.map((part, pIdx) => {
-                    // Extract header and body
-                    const match = part.match(/^\*\*([^\*]+)\*\*(.*)/s);
-                    if (!match) return null;
-                    const header = match[1];
-                    const body = match[2];
+                  {dropdownParts.map((part: any, pIdx) => {
+                    const { header, body } = part;
 
                     return (
-                      <details key={pIdx} className="group border border-[var(--color-gray-200)] rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300">
+                      <details key={pIdx} className="group border border-[var(--color-gray-200)] rounded-2xl overflow-hidden transition-all duration-300">
                         <summary className="flex items-center justify-between p-5 bg-[var(--color-gray-50)] cursor-pointer list-none select-none">
-                          <span className="font-bold text-[var(--color-primary)] text-[16px] md:text-[18px] pr-4">
-                            {header}
+                          <span className="text-slate-800 font-normal text-[15px] md:text-[16px] pr-4 transition-colors duration-300 group-open:text-[var(--color-primary)]">
+                            {header.replace(/\*/g, '')}
                           </span>
-                          <div className="text-[var(--color-primary)] transition-transform duration-300 group-open:rotate-180">
+                          <div className="text-slate-400 transition-all duration-300 group-open:text-[var(--color-primary)] group-open:rotate-180">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                               <polyline points="6 9 12 15 18 9"></polyline>
                             </svg>
