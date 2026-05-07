@@ -107,9 +107,10 @@ class ChatRequest(BaseModel):
 
 class GenerateRequest(BaseModel):
     chapterTitle: str
+    content: Optional[str] = None
 
 class GenerateExamRequest(BaseModel):
-    chapterTitles: List[str]
+    chapters: List[Dict[str, str]]
 
 class PDFSummaryRequest(BaseModel):
     quizScores: Dict[str, Any]
@@ -188,8 +189,9 @@ _syllabus_context = get_full_syllabus()
 async def retrieve_node(state: AgentState):
     last_message = state["messages"][-1].content
     print(f"---CHAT QUESTION: {last_message[:80]}---")
-    # Always use the full syllabus as context
-    return {"context": _syllabus_context}
+    # Optimize token usage: retrieve only relevant section instead of full syllabus
+    relevant_context = await get_subject_section(last_message)
+    return {"context": relevant_context}
 
 async def generate_node(state: AgentState):
     print("---GENERATING RESPONSE---")
@@ -313,11 +315,11 @@ async def chat_stream(request: ChatRequest):
 async def generate_quiz(request: GenerateRequest):
     try:
         print(f"---GENERATING QUIZ FOR: {request.chapterTitle}---")
-        context = get_subject_section(request.chapterTitle)
+        context = request.content if request.content else get_subject_section(request.chapterTitle)
 
         prompt = f"""You are an expert Computer Science examiner. 
 Create a 10-question multiple-choice quiz about the following topic: {request.chapterTitle}.
-Use the provided syllabus context to ensure accuracy. 
+Use ONLY the provided lesson content context to generate questions. Ensure accuracy based strictly on this content. Do not use general knowledge.
 Each question must have exactly 4 options.
 Each question must be classified into one of Bloom's Taxonomy domains: Remember, Understand, Apply, Analyze, Evaluate, Create.
 Try to distribute questions across different domains.
@@ -354,11 +356,11 @@ Context:
 async def generate_flashcards(request: GenerateRequest):
     try:
         print(f"---GENERATING FLASHCARDS FOR: {request.chapterTitle}---")
-        context = get_subject_section(request.chapterTitle)
+        context = request.content if request.content else get_subject_section(request.chapterTitle)
 
         prompt = f"""You are an expert Computer Science educator.
 Create exactly 10 flashcards about the following topic: {request.chapterTitle}.
-Use the provided syllabus context to ensure accuracy.
+Use ONLY the provided lesson content context to generate flashcards. Ensure accuracy based strictly on this content. Do not use general knowledge.
 
 Each flashcard should have:
 - "front": A clear, concise question or term (max 10 words)
@@ -394,18 +396,23 @@ Context:
 
 @app.post("/api/generate-exam")
 async def generate_exam(request: GenerateExamRequest):
-    if not request.chapterTitles:
-        raise HTTPException(status_code=400, detail="chapterTitles array is required")
+    if not request.chapters:
+        raise HTTPException(status_code=400, detail="chapters array is required")
 
     try:
-        print(f"---GENERATING EXAM FOR {len(request.chapterTitles)} CHAPTERS---")
+        print(f"---GENERATING EXAM FOR {len(request.chapters)} CHAPTERS---")
         
         all_context = ""
-        for i, title in enumerate(request.chapterTitles):
-            section = get_subject_section(title)
-            all_context += f"\n\n--- {title} ---\n" + section
+        chapter_titles = []
+        for i, chapter in enumerate(request.chapters):
+            title = chapter.get("title", "")
+            content = chapter.get("content", "")
+            # Truncate content to avoid exceeding token limits when combining many chapters
+            short_content = content[:1500] + "..." if len(content) > 1500 else content
+            all_context += f"\n\n--- {title} ---\n" + short_content
+            chapter_titles.append(title)
 
-        chapters_list_str = "\n".join([f"{i+1}. {t}" for i, t in enumerate(request.chapterTitles)])
+        chapters_list_str = "\n".join([f"{i+1}. {t}" for i, t in enumerate(chapter_titles)])
 
         prompt = f"""You are an expert Computer Science examiner creating a comprehensive final exam.
 Create exactly 20 multiple-choice questions covering ALL of the following chapters EVENLY (approximately 2 questions per chapter):
@@ -419,6 +426,8 @@ Each question must have:
 - a chapterTitle indicating which chapter the question belongs to (use the exact chapter title from the list above)
 
 Distribute the Bloom's domains as evenly as possible across all 20 questions.
+
+Use ONLY the provided lesson content context to generate questions. Ensure accuracy based strictly on this content. Do not use general knowledge.
 
 IMPORTANT: All questions and options MUST be written in Thai language.
 Only use English for technical terms.
@@ -528,9 +537,12 @@ async def generate_pdf(request: PDFGenerateRequest):
 # --- SUPABASE ROUTES ---
 
 @app.get("/api/lessons")
-async def get_lessons():
+async def get_lessons(course_slug: Optional[str] = None):
     try:
-        response = supabase.table('lessons').select('*').order('order_index').execute()
+        query = supabase.table('lessons').select('*').order('order_index')
+        if course_slug:
+            query = query.eq('course_slug', course_slug)
+        response = query.execute()
         return response.data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

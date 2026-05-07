@@ -5,7 +5,6 @@ import React, { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import courses_data from "@/data/courses.json";
-import lessons_data from "@/data/lessons.json";
 import { apiService } from "@/services/api";
 import { InlineAIChat } from "@/components/InlineAIChat";
 import { FlashcardsTab } from "@/components/FlashcardsTab";
@@ -39,7 +38,8 @@ function ChapterView({
   topics: string[],
   lessons: any[],
   onChangeChapter: (idx: number) => void,
-  onKeywordClick: (keyword: string) => void
+  onKeywordClick: (keyword: string) => void,
+  onCompleteLesson?: (lessonId: string) => void
 }) {
   const contentRef = React.useRef<HTMLDivElement>(null);
   const topic = topics[chapterIdx] || "";
@@ -299,19 +299,54 @@ function ChapterView({
           {chapterIdx + 1} <span className="text-[var(--color-gray-200)] mx-1">/</span> {topics.length}
         </div>
         <button
-          disabled={chapterIdx === topics.length - 1}
-          onClick={() => onChangeChapter(chapterIdx + 1)}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl border text-[12px] font-bold transition-all ${chapterIdx === topics.length - 1 ? 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed' : 'bg-[var(--color-primary)] text-white border-[var(--color-primary)] hover:brightness-105 active:scale-95 shadow-[0_4px_12px_-2px_rgba(177,178,255,0.3)]'}`}
+          onClick={() => {
+            if (matchingLesson?.id && onCompleteLesson) {
+              onCompleteLesson(matchingLesson.id);
+            }
+            if (chapterIdx < topics.length - 1) {
+              onChangeChapter(chapterIdx + 1);
+            } else {
+              // Mark last lesson as complete and show alert
+              alert("ยินดีด้วย! คุณอ่านจบทุกบทแล้ว 🎉");
+            }
+          }}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl border text-[12px] font-bold transition-all bg-[var(--color-primary)] text-white border-[var(--color-primary)] hover:brightness-105 active:scale-95 shadow-[0_4px_12px_-2px_rgba(177,178,255,0.3)]`}
         >
-          Next
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="9 18 15 12 9 6"></polyline>
-          </svg>
+          {chapterIdx === topics.length - 1 ? "Finish" : "Next"}
+          {chapterIdx < topics.length - 1 && (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="9 18 15 12 9 6"></polyline>
+            </svg>
+          )}
         </button>
       </div>
     </div>
   );
 }
+
+// --- Login Required Component ---
+const LoginRequired = ({ title, description }: { title: string, description: string }) => {
+  const { openModal } = useAuth();
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center p-8 text-center animate-in fade-in zoom-in-95 duration-500 min-h-[400px]">
+      <div className="w-20 h-20 bg-[var(--color-primary)]/10 rounded-full flex items-center justify-center mb-6">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--color-primary)]">
+          <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
+          <polyline points="10 17 15 12 10 7"></polyline>
+          <line x1="15" y1="12" x2="3" y2="12"></line>
+        </svg>
+      </div>
+      <h2 className="text-2xl font-bold text-[var(--color-black)] mb-2">{title}</h2>
+      <p className="text-[var(--color-gray-500)] mb-8 max-w-xs mx-auto">{description}</p>
+      <button 
+        onClick={openModal}
+        className="px-8 py-4 bg-[var(--color-primary)] text-white rounded-2xl font-bold text-lg hover:brightness-110 active:scale-95 transition-all shadow-lg"
+      >
+        Login to Continue
+      </button>
+    </div>
+  );
+};
 
 export default function CoursePage() {
   const params = useParams();
@@ -377,26 +412,27 @@ export default function CoursePage() {
   const [exam_questions, set_exam_questions] = useState<any[]>([]);
 
   useEffect(() => {
-    // Load lessons from local JSON with robust matching
     const current_slug = Array.isArray(slug) ? slug[0] : slug;
-    const year_key = `year${course_year}` as keyof typeof lessons_data;
-    const year_lessons = lessons_data[year_key] || {};
     
-    // Try to find in current year first
-    let course_lessons = (year_lessons as any)[current_slug] || [];
-    
-    // Fallback: If not found, search in all years
-    if (course_lessons.length === 0) {
-      Object.values(lessons_data).forEach((year_data: any) => {
-        if (year_data[current_slug]) {
-          course_lessons = year_data[current_slug];
-        }
-      });
+    async function loadLessons() {
+      setLoadingLessons(true);
+      try {
+        const fetchedLessons = await apiService.getLessons(current_slug);
+        
+        // Ensure sorting by order_index
+        fetchedLessons.sort((a: any, b: any) => a.order_index - b.order_index);
+        
+        setLessons(fetchedLessons);
+      } catch (err) {
+        console.error("Failed to load lessons from database:", err);
+        setLessons([]);
+      } finally {
+        setLoadingLessons(false);
+      }
     }
     
-    setLessons(course_lessons);
-    setLoadingLessons(false);
-  }, [slug, course_year]);
+    loadLessons();
+  }, [slug]);
 
   // Fetch completed lessons when user is available
   useEffect(() => {
@@ -506,7 +542,15 @@ export default function CoursePage() {
   const HandleGenerateExam = async () => {
     set_is_generating_exam(true);
     try {
-      const data = await apiService.generateExam(course.topics);
+      const examChapters = course.topics.map((topic: string) => {
+        const matchingLesson = lessons.find(l => cleanString(l.title) === cleanString(topic));
+        return {
+          title: topic,
+          content: matchingLesson?.content || ""
+        };
+      });
+
+      const data = await apiService.generateExam(examChapters);
       
       const mappedQuestions = data.questions.map((q: any) => ({
         question: q.question,
@@ -576,6 +620,7 @@ export default function CoursePage() {
                   lessons={lessons}
                   onChangeChapter={setCurrentChapterIdx}
                   onKeywordClick={(kw) => setExternalChatPrompt(kw)}
+                  onCompleteLesson={handleCompleteLesson}
                 />
               </div>
 
@@ -602,65 +647,83 @@ export default function CoursePage() {
 
               {/* Quiz Tab */}
               <div className={activeTab === "Quiz" ? "flex-1 flex flex-col" : "hidden"}>
-                <div className={is_generating_quiz ? "block h-full" : "hidden"}>
-                  <FlashcardsLoading 
-                    title="Generating Quiz" 
-                    messages={[
-                      "กำลังสุ่มประเด็นสำคัญมาออกข้อสอบ...",
-                      "กำลังสร้างตัวเลือกที่ท้าทายความสามารถ...",
-                      "กำลังตรวจสอบความถูกต้องของเฉลย...",
-                      "กำลังคัดเลือกข้อสอบที่มีคุณภาพ...",
-                      "อีกสักครู่ ข้อสอบของคุณจะพร้อมแล้ว..."
-                    ]}
+                {!user ? (
+                  <LoginRequired 
+                    title="Quiz Mode" 
+                    description="Please login to start the quiz and save your progress." 
                   />
-                </div>
-                <div className={!is_generating_quiz && is_viewing_quiz ? "block h-full" : "hidden"}>
-                  <QuizPlayer 
-                    questions={quiz_questions} 
-                    OnClose={() => set_is_viewing_quiz(false)} 
-                    userId={user?.uid}
-                    lessonId={lessons.find(l => cleanString(l.title) === cleanString(selected_topics[0]))?.id}
-                  />
-                </div>
-                <div className={!is_generating_quiz && !is_viewing_quiz ? "block h-full" : "hidden"}>
-                  <QuizTab 
-                    topics={course.topics}
-                    selected_topics={selected_topics}
-                    OnToggle={HandleToggleTopic}
-                    OnGenerate={HandleGenerateQuiz}
-                  />
-                </div>
+                ) : (
+                  <>
+                    <div className={is_generating_quiz ? "block h-full" : "hidden"}>
+                      <FlashcardsLoading 
+                        title="Generating Quiz" 
+                        messages={[
+                          "กำลังสุ่มประเด็นสำคัญมาออกข้อสอบ...",
+                          "กำลังสร้างตัวเลือกที่ท้าทายความสามารถ...",
+                          "กำลังตรวจสอบความถูกต้องของเฉลย...",
+                          "กำลังคัดเลือกข้อสอบที่มีคุณภาพ...",
+                          "อีกสักครู่ ข้อสอบของคุณจะพร้อมแล้ว..."
+                        ]}
+                      />
+                    </div>
+                    <div className={!is_generating_quiz && is_viewing_quiz ? "block h-full" : "hidden"}>
+                      <QuizPlayer 
+                        questions={quiz_questions} 
+                        OnClose={() => set_is_viewing_quiz(false)} 
+                        userId={user?.uid}
+                        lessonId={lessons.find(l => cleanString(l.title) === cleanString(selected_topics[0]))?.id}
+                      />
+                    </div>
+                    <div className={!is_generating_quiz && !is_viewing_quiz ? "block h-full" : "hidden"}>
+                      <QuizTab 
+                        topics={course.topics}
+                        selected_topics={selected_topics}
+                        OnToggle={HandleToggleTopic}
+                        OnGenerate={HandleGenerateQuiz}
+                      />
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Exam Tab */}
               <div className={activeTab === "Exam" ? "flex-1 flex flex-col" : "hidden"}>
-                <div className={is_generating_exam ? "block h-full" : "hidden"}>
-                  <FlashcardsLoading 
-                    title="Generating Examination" 
-                    messages={[
-                      "กำลังรวบรวมเนื้อหาจากทุกบทเรียน...",
-                      "กำลังคัดเลือกข้อสอบให้ครอบคลุมหลักสูตร...",
-                      "กำลังสร้างชุดข้อสอบจำลองที่หลากหลาย...",
-                      "กำลังจัดเตรียมเฉลยและบทวิเคราะห์...",
-                      "ระบบกำลังประมวลผลข้อสอบไล่ (Final Exam)..."
-                    ]}
+                {!user ? (
+                  <LoginRequired 
+                    title="Examination Mode" 
+                    description="Please login to take the final exam and get your performance report." 
                   />
-                </div>
-                <div className={!is_generating_exam && is_viewing_exam ? "block h-full" : "hidden"}>
-                  <ExamPlayer 
-                    questions={exam_questions} 
-                    topics={course.topics}
-                    courseName={course.name_en}
-                    userId={user?.uid}
-                    OnClose={() => set_is_viewing_exam(false)} 
-                  />
-                </div>
-                <div className={!is_generating_exam && !is_viewing_exam ? "block h-full" : "hidden"}>
-                  <ExamTab 
-                    course_name={course.name_en}
-                    OnGenerate={HandleGenerateExam}
-                  />
-                </div>
+                ) : (
+                  <>
+                    <div className={is_generating_exam ? "block h-full" : "hidden"}>
+                      <FlashcardsLoading 
+                        title="Generating Examination" 
+                        messages={[
+                          "กำลังรวบรวมเนื้อหาจากทุกบทเรียน...",
+                          "กำลังคัดเลือกข้อสอบให้ครอบคลุมหลักสูตร...",
+                          "กำลังสร้างชุดข้อสอบจำลองที่หลากหลาย...",
+                          "กำลังจัดเตรียมเฉลยและบทวิเคราะห์...",
+                          "ระบบกำลังประมวลผลข้อสอบไล่ (Final Exam)..."
+                        ]}
+                      />
+                    </div>
+                    <div className={!is_generating_exam && is_viewing_exam ? "block h-full" : "hidden"}>
+                      <ExamPlayer 
+                        questions={exam_questions} 
+                        topics={course.topics}
+                        courseName={course.name_en}
+                        userId={user?.uid}
+                        OnClose={() => set_is_viewing_exam(false)} 
+                      />
+                    </div>
+                    <div className={!is_generating_exam && !is_viewing_exam ? "block h-full" : "hidden"}>
+                      <ExamTab 
+                        course_name={course.name_en}
+                        OnGenerate={HandleGenerateExam}
+                      />
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>

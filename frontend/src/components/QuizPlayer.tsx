@@ -66,9 +66,13 @@ export function QuizPlayer({ questions, OnClose, userId, lessonId }: QuizPlayerP
           });
         } catch (error) {
           console.error("Failed to save score:", error);
+          alert("Failed to save score. Check console.");
         } finally {
           set_is_saving(false);
         }
+      } else {
+        console.error("Missing userId or lessonId", { userId, lessonId });
+        alert(`คะแนนไม่ถูกบันทึก เนื่องจากข้อมูลไม่ครบ (userId: ${!!userId}, lessonId: ${!!lessonId})`);
       }
     }
   };

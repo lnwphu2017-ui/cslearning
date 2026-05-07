@@ -89,12 +89,12 @@ export const apiService = {
   },
   
   // 4. Exam Generation (direct to backend - takes 60-120s)
-  async generateExam(chapterTitles: string[]) {
+  async generateExam(chapters: { title: string; content: string }[]) {
     try {
       const res = await fetch(`${BACKEND_URL}/api/generate-exam`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chapterTitles })
+        body: JSON.stringify({ chapters })
       });
       if (!res.ok) throw new Error('Network response was not ok');
       return await res.json();
@@ -121,9 +121,10 @@ export const apiService = {
   },
 
   // 6. Supabase - Get Lessons
-  async getLessons() {
+  async getLessons(courseSlug?: string) {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/lessons`);
+      const url = courseSlug ? `${BACKEND_URL}/api/lessons?course_slug=${courseSlug}` : `${BACKEND_URL}/api/lessons`;
+      const res = await fetch(url);
       if (!res.ok) throw new Error('Failed to fetch lessons');
       return await res.json();
     } catch (error) {
