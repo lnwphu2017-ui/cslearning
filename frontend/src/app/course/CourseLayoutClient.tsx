@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import courses_data from "@/data/courses.json";
 import { usePathname } from "next/navigation";
 
@@ -50,7 +51,8 @@ export default function CourseLayoutClient({ children }: { children: React.React
       {/* Mobile Header (Only visible on small screens) */}
       <div className="md:hidden flex items-center justify-between px-6 h-16 bg-white border-b border-[var(--color-gray-200)] shrink-0 z-40">
         <Link href="/" className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-[var(--color-primary)] rounded-lg flex items-center justify-center shrink-0 shadow-sm">
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 relative overflow-hidden">
+             <Image src="/pic.jpg" alt="Logo" fill className="object-cover scale-[1.4]" />
           </div>
           <span className="font-bold text-lg tracking-tight text-[var(--color-primary)]">CSLearning</span>
         </Link>
@@ -87,12 +89,8 @@ export default function CourseLayoutClient({ children }: { children: React.React
       >
         <div className={`h-16 flex items-center mt-6 ${isMounted ? 'transition-all duration-300' : ''} ${isSidebarOpen ? 'px-6' : 'px-0 justify-center'}`}>
           <Link href="/" className={`flex items-center gap-3 group/logo ${isSidebarOpen ? 'w-full overflow-hidden' : ''}`}>
-            <div className="w-9 h-9 md:w-10 md:h-10 bg-[var(--color-primary)] rounded-[10px] md:rounded-[12px] flex items-center justify-center shrink-0 relative overflow-hidden shadow-sm">
-               {/* Target Layers */}
-               <div className="w-6 h-6 md:w-7 md:h-7 bg-white rounded-[6px] md:rounded-[8px] flex items-center justify-center">
-                  <div className="w-3 h-3 md:w-3.5 md:h-3.5 bg-[var(--color-primary)] rounded-[3px] md:rounded-[4px]" />
-               </div>
-               <div className="absolute inset-0 bg-gradient-to-tr from-white/20 to-transparent opacity-30" />
+            <div className="w-12 h-12 md:w-14 md:h-14 rounded-xl flex items-center justify-center shrink-0 relative overflow-hidden">
+               <Image src="/pic.jpg" alt="Logo" fill className="object-cover scale-[1.4]" />
             </div>
             {isSidebarOpen && (
               <span className="font-bold text-base lg:text-[19px] tracking-tight text-[var(--color-primary)] whitespace-nowrap group-hover/logo:opacity-80 transition-all">

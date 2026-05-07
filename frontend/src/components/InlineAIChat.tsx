@@ -117,10 +117,10 @@ export function InlineAIChat({ courseName, initialTopic, externalPrompt, onPromp
           return (
             <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div 
-                className={`max-w-[85%] text-[13.5px] leading-[1.6] ${
+                className={`text-[13.5px] leading-[1.6] ${
                   msg.role === 'user' 
-                  ? 'bg-[var(--color-primary)] text-white rounded-2xl px-4 py-2.5 shadow-[0_6px_20px_rgba(177,178,255,0.3)]' 
-                  : 'text-white/90 py-2'
+                  ? 'w-fit max-w-[85%] sm:max-w-[calc(100%-104px)] bg-[var(--color-primary)] text-white rounded-[24px] px-4 py-2.5 shadow-[0_6px_20px_rgba(177,178,255,0.3)] mr-0 sm:mr-[52px]' 
+                  : 'w-full text-white/90 py-2'
                 }`}
               >
                 {msg.role === 'user' 
@@ -132,7 +132,7 @@ export function InlineAIChat({ courseName, initialTopic, externalPrompt, onPromp
                           <path d="M12 3C12 7.97056 7.97056 12 3 12C7.97056 12 12 16.0294 12 21C12 16.0294 16.0294 12 21 12C16.0294 12 12 7.97056 12 3Z" fill="white" />
                         </svg>
                       </div>
-                      <div className="assistant-message-dark pt-1">
+                      <div className="assistant-message-dark pt-1 flex-1 pr-0 sm:pr-[52px]">
                         <TypewriterEffect text={msg.content} animate={msg.animate} />
                       </div>
                     </div>
@@ -144,7 +144,7 @@ export function InlineAIChat({ courseName, initialTopic, externalPrompt, onPromp
         {/* Show generic loading animation only if the last message is assistant and content is still empty (waiting for first byte) */}
         {isLoading && messages[messages.length - 1]?.role === 'assistant' && !messages[messages.length - 1]?.content && (
           <div className="flex justify-start animate-fade-in-up py-4">
-            <div className="max-w-[85%] flex items-center gap-2">
+            <div className="w-full flex items-center gap-2">
               <span className="w-1.5 h-1.5 bg-white/60 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
               <span className="w-1.5 h-1.5 bg-white/60 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
               <span className="w-1.5 h-1.5 bg-white/60 rounded-full animate-bounce"></span>

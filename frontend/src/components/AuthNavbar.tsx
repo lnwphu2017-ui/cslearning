@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useAuth } from "@/contexts/AuthContext";
 
 interface AuthNavbarProps {
@@ -14,12 +15,8 @@ export function AuthNavbar({ className = "" }: AuthNavbarProps) {
     <nav className={`z-50 bg-white/80 backdrop-blur-md border-b border-[var(--color-gray-200)] shadow-sm ${className}`}>
       <div className="w-full px-6 md:px-12 h-16 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-3 group/logo">
-          <div className="w-9 h-9 bg-[var(--color-primary)] rounded-[10px] flex items-center justify-center shrink-0 relative overflow-hidden shadow-sm">
-             {/* Target Layers */}
-             <div className="w-6 h-6 bg-white rounded-[6px] flex items-center justify-center">
-                <div className="w-3 h-3 bg-[var(--color-primary)] rounded-[3px]" />
-             </div>
-             <div className="absolute inset-0 bg-gradient-to-tr from-white/20 to-transparent opacity-30" />
+          <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl flex items-center justify-center shrink-0 relative overflow-hidden">
+             <Image src="/pic.jpg" alt="Logo" fill className="object-cover scale-[1.4]" />
           </div>
           <span className="text-lg font-bold tracking-tight text-[var(--color-primary)] group-hover:opacity-80 transition-all">CSLearning</span>
         </Link>

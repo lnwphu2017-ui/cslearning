@@ -23,6 +23,8 @@ import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
 import 'katex/dist/katex.min.css';
 
+const cleanString = (s: string) => (s || "").replace(/^บทที่\s*\d+\s*:\s*/, '').replace(/\s*\(.*?\)\s*/g, '').trim().normalize('NFC').replace(/\s+/g, '');
+
 const tabs = ["Content", "Flashcards", "Quiz", "Exam"];
 
 // --- Sub-component: Full chapter view (1 chapter = 1 scrollable page) ---
@@ -41,7 +43,6 @@ function ChapterView({
 }) {
   const contentRef = React.useRef<HTMLDivElement>(null);
   const topic = topics[chapterIdx] || "";
-  const cleanString = (s: string) => (s || "").replace(/\s*\(.*?\)\s*/g, '').trim().normalize('NFC').replace(/\s+/g, '');
   const matchingLesson = lessons.find((l: any) => cleanString(l.title) === cleanString(topic));
 
   // Scroll to top when chapter changes
@@ -51,21 +52,157 @@ function ChapterView({
 
   const full_content = (matchingLesson?.content || "").replace(/\\n/g, '\n');
 
-  // Pre-process content to make any (text) or (**text**) clickable
-  const step1 = full_content.replace(/(?<!\])\(([^)]+)\)/g, (match, p1) => {
-    const cleanTerm = p1.replace(/[*_]/g, '').trim();
-    // Encode the term for the URL part to handle spaces correctly
-    const encodedTerm = encodeURIComponent(cleanTerm);
-    return `[(${p1})](#click-${encodedTerm})`;
+  // --- Content Processing Logic ---
+  // 1. Clean the initial content (remove title if it repeats)
+  const lines = full_content.split('\n');
+  const filteredLines = lines.filter((line, idx) => {
+    if (idx === 0 && (line.startsWith('#') || line.trim() === topic.trim())) return false;
+    return true;
   });
+  const contentToProcess = filteredLines.join('\n').trim();
 
-  // Automatically bold English terms in double quotes to make them clickable via our 'strong' component
-  const processedContent = step1.replace(/"([A-Za-z0-9\s\-_]+)"/g, '**"$1"**');
+  // 2. Helper to process chatbot links in a string
+  const processLinks = (text: string) => {
+    return text.replace(/(?<!\])\(([^)]+)\)/g, (match: string, p1: string) => {
+      const cleanTerm = p1.replace(/[*_]/g, '').trim();
+      if (/[a-zA-Z]/.test(cleanTerm)) {
+        const encodedTerm = encodeURIComponent(cleanTerm);
+        return `[(**${cleanTerm}**)](#click-${encodedTerm})`;
+      }
+      return match;
+    });
+  };
+
+  // 3. Split and Merge Sections (Improved Grouping)
+  // We want to group related sub-components (like L1/L2/L3 Cache or ALU/CU) together.
+  
+  // First, find where the first dropdown should start (the first bold header)
+  const firstHeaderMatch = contentToProcess.match(/\n\n\*\*/);
+  let introPart = "";
+  let sectionsPart = "";
+
+  if (!firstHeaderMatch) {
+    introPart = contentToProcess;
+    sectionsPart = "";
+  } else {
+    const splitIdx = firstHeaderMatch.index!;
+    introPart = contentToProcess.substring(0, splitIdx).trim();
+    sectionsPart = contentToProcess.substring(splitIdx).trim();
+  }
+
+  const rawSections = sectionsPart.split(/\n\n(?=\*\*)/).filter(s => s.trim() !== "");
+  const mergedSections: string[] = [];
+  
+  if (rawSections.length > 0) {
+    let currentAccumulator = rawSections[0];
+
+    for (let i = 1; i < rawSections.length; i++) {
+      const section = rawSections[i];
+      const firstLine = section.split('\n')[0];
+      
+      // Determine if this section starts a NEW dropdown box
+      // Rule: New box if the header has English terminology in parentheses (at least 5 chars of English)
+      // AND it's not a numbered sub-item like L1, L2, L3 or a specific sub-component.
+      const engMatch = firstLine.match(/\(([^)]+)\)/);
+      const englishTerm = engMatch ? engMatch[1].replace(/[^a-zA-Z]/g, '') : "";
+      
+      const isMainSubject = englishTerm.length >= 5 && 
+                            !/L\d\s+Cache/i.test(firstLine) &&
+                            !/ALU|CU|Register/i.test(firstLine);
+
+      if (isMainSubject) {
+        mergedSections.push(currentAccumulator);
+        currentAccumulator = section;
+      } else {
+        // Merge related or minor points into the current box
+        currentAccumulator += "\n\n" + section;
+      }
+    }
+    mergedSections.push(currentAccumulator);
+  }
+
+  const dropdownParts = mergedSections;
+
+  const markdownComponents = {
+    strong: ({ children }: any) => {
+      const getDeepText = (node: any): string => {
+        if (typeof node === 'string') return node;
+        if (Array.isArray(node)) return node.map(getDeepText).join('');
+        if (node?.props?.children) return getDeepText(node.props.children);
+        return '';
+      };
+      const term = getDeepText(children);
+      const isEnglish = /^[A-Za-z0-9\s\-_.',"]+$/.test(term.trim());
+      
+      if (isEnglish) return <strong>{children}</strong>;
+
+      return (
+        <strong 
+          onClick={() => onKeywordClick(`ช่วยอธิบายเพิ่มเติมเกี่ยวกับ "${term}"`)}
+          className="cursor-pointer hover:text-[var(--color-primary)] hover:underline underline-offset-4 decoration-dashed transition-all"
+          title={`คลิกเพื่อถามเกี่ยวกับ ${term}`}
+        >
+          {children}
+        </strong>
+      );
+    },
+    a: ({ href, children }: any) => {
+      if (href?.startsWith('#click-')) {
+        const term = decodeURIComponent(href.replace('#click-', ''));
+        return (
+          <span 
+            onClick={() => onKeywordClick(`ช่วยอธิบายเพิ่มเติมเกี่ยวกับ "${term}"`)}
+            className="cursor-pointer text-[var(--color-gray-700)] hover:text-[var(--color-primary)] hover:underline underline-offset-4 decoration-dashed transition-all"
+            title={`คลิกเพื่อถามเกี่ยวกับ ${term}`}
+          >
+            {children}
+          </span>
+        );
+      }
+      return <a href={href} className="text-[var(--color-primary)] underline">{children}</a>;
+    },
+    blockquote: ({ children }: any) => {
+      const getDeepText = (node: any): string => {
+        if (typeof node === 'string') return node;
+        if (Array.isArray(node)) return node.map(getDeepText).join('');
+        if (node?.props?.children) return getDeepText(node.props.children);
+        return '';
+      };
+      
+      const allText = getDeepText(children);
+      const isKeyword = allText.includes('Keyword');
+
+      if (isKeyword) {
+        const rawKeywords = matchingLesson?.content?.match(/\*\*Keyword\*\*:\s*(.*)/)?.[1] || "";
+        const keywordsArray = rawKeywords.split(',').map((k: string) => k.trim()).filter((k: string) => k !== "");
+        
+        if (keywordsArray.length === 0) return <blockquote className="border-l-4 border-[var(--color-primary)] bg-[var(--color-gray-50)] py-1 px-5 rounded-r-lg italic">{children}</blockquote>;
+
+        return (
+          <blockquote className="border-l-4 border-[var(--color-primary)] bg-[var(--color-gray-50)] py-3 px-5 rounded-r-lg italic my-6">
+            <strong className="not-italic">Keyword</strong>:{" "}
+            {keywordsArray.map((kw: string, i: number) => (
+              <span key={i}>
+                <span
+                  onClick={() => onKeywordClick(`ช่วยอธิบายเพิ่มเติมเกี่ยวกับ "${kw}" ในบริบทของบทเรียนนี้หน่อยครับ`)}
+                  className="cursor-pointer hover:text-[var(--color-primary)] hover:underline underline-offset-4 decoration-dashed transition-all font-medium"
+                >
+                  {kw}
+                </span>
+                {i < keywordsArray.length - 1 ? ", " : ""}
+              </span>
+            ))}
+          </blockquote>
+        );
+      }
+      return <blockquote className="border-l-4 border-[var(--color-primary)] bg-[var(--color-gray-50)] py-1 px-5 rounded-r-lg italic">{children}</blockquote>;
+    }
+  };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full relative overflow-hidden bg-white">
       {/* Chapter Header */}
-      <div className="px-6 md:px-8 lg:px-12 pt-2 md:pt-3 pb-2 shrink-0 border-b border-[var(--color-gray-100)]">
+      <div className="px-6 md:px-8 lg:px-12 pt-2 md:pt-3 pb-2 shrink-0 border-b border-[var(--color-gray-100)] z-20 bg-white">
         <h2 className="text-[15px] md:text-[18px] font-bold text-[var(--color-primary)] leading-snug">
           {topic}
         </h2>
@@ -74,9 +211,13 @@ function ChapterView({
         </div>
       </div>
 
-      {/* Scrollable Content */}
-      <div ref={contentRef} className="flex-1 overflow-y-auto premium-scrollbar px-6 md:px-8 lg:px-12 py-4 md:py-6">
-        {matchingLesson ? (
+      {/* Scrollable Content wrapper */}
+      <div className="relative flex-1 overflow-hidden bg-white">
+        {/* กล่องสีขาวทับลูกศรด้านบน */}
+        <div className="absolute top-0 right-0 w-[14px] h-[10px] bg-white z-10 pointer-events-none" />
+        
+        <div ref={contentRef} className="h-full overflow-y-auto premium-scrollbar px-6 md:px-8 lg:px-12 py-4 md:py-6">
+          {matchingLesson ? (
           <div className="lesson-content prose prose-slate max-w-none 
             prose-headings:text-[var(--color-primary)] prose-headings:font-bold prose-headings:tracking-tight
             prose-h2:text-[19px] md:prose-h2:text-[24px] prose-h2:mt-10 prose-h2:mb-6 prose-h2:border-b prose-h2:border-[var(--color-gray-100)] prose-h2:pb-3
@@ -86,94 +227,60 @@ function ChapterView({
             prose-hr:border-[var(--color-gray-100)] prose-hr:my-10
             prose-blockquote:border-l-4 prose-blockquote:border-[var(--color-primary)] prose-blockquote:bg-[var(--color-gray-50)] prose-blockquote:py-1 prose-blockquote:px-5 prose-blockquote:rounded-r-lg prose-blockquote:italic
             ">
-            <ReactMarkdown 
-              remarkPlugins={[remarkGfm, remarkMath]} 
-              rehypePlugins={[rehypeKatex, rehypeRaw]}
-              components={{
-                strong: ({ children }) => {
-                  const getDeepText = (node: any): string => {
-                    if (typeof node === 'string') return node;
-                    if (Array.isArray(node)) return node.map(getDeepText).join('');
-                    if (node?.props?.children) return getDeepText(node.props.children);
-                    return '';
-                  };
-                  const term = getDeepText(children);
-                  return (
-                    <strong 
-                      onClick={() => onKeywordClick(`ช่วยอธิบายเพิ่มเติมเกี่ยวกับ "${term}" ในบริบทของบทเรียนนี้หน่อยครับ`)}
-                      className="cursor-pointer hover:text-[var(--color-primary)] hover:underline underline-offset-4 decoration-dashed transition-all"
-                      title={`คลิกเพื่อถามเกี่ยวกับ ${term}`}
-                    >
-                      {children}
-                    </strong>
-                  );
-                },
-                a: ({ href, children }) => {
-                  if (href?.startsWith('#click-')) {
-                    const term = decodeURIComponent(href.replace('#click-', ''));
-                    return (
-                      <span 
-                        onClick={() => onKeywordClick(`ช่วยอธิบายเพิ่มเติมเกี่ยวกับ "${term}" ในบริบทของบทเรียนนี้หน่อยครับ`)}
-                        className="cursor-pointer text-[var(--color-gray-700)] hover:text-[var(--color-primary)] hover:underline underline-offset-4 decoration-dashed transition-all"
-                        title={`คลิกเพื่อถามเกี่ยวกับ ${term}`}
-                      >
-                        {children}
-                      </span>
-                    );
-                  }
-                  return <a href={href} className="text-[var(--color-primary)] underline">{children}</a>;
-                },
-                blockquote: ({ children }) => {
-                  // Robustly extract all text content from children to detect "Keyword"
-                  const getDeepText = (node: any): string => {
-                    if (typeof node === 'string') return node;
-                    if (Array.isArray(node)) return node.map(getDeepText).join('');
-                    if (node?.props?.children) return getDeepText(node.props.children);
-                    return '';
-                  };
-                  
-                  const allText = getDeepText(children);
-                  const isKeyword = allText.includes('Keyword');
+              
+              {/* Intro Content */}
+              <ReactMarkdown 
+                remarkPlugins={[remarkGfm, remarkMath]} 
+                rehypePlugins={[rehypeKatex, rehypeRaw]}
+                components={markdownComponents}
+              >
+                {processLinks(introPart)}
+              </ReactMarkdown>
 
-                  if (isKeyword) {
-                    const rawKeywords = lessons[chapterIdx]?.content?.match(/\*\*Keyword\*\*:\s*(.*)/)?.[1] || "";
-                    const keywordsArray = rawKeywords.split(',');
-                    
+              {/* Dropdown Sections */}
+              {dropdownParts.length > 0 && (
+                <div className="mt-10 space-y-4">
+                  {dropdownParts.map((part, pIdx) => {
+                    // Extract header and body
+                    const match = part.match(/^\*\*([^\*]+)\*\*(.*)/s);
+                    if (!match) return null;
+                    const header = match[1];
+                    const body = match[2];
+
                     return (
-                      <blockquote className="border-l-4 border-[var(--color-primary)] bg-[var(--color-gray-50)] py-3 px-5 rounded-r-lg italic my-6">
-                        <strong className="not-italic">Keyword</strong>:{" "}
-                        {keywordsArray.map((kw, i) => (
-                          <span key={i}>
-                            <span
-                              onClick={() => onKeywordClick(`ช่วยอธิบายเพิ่มเติมเกี่ยวกับ "${kw.trim()}" ในบริบทของบทเรียนนี้หน่อยครับ`)}
-                              className="cursor-pointer hover:text-[var(--color-primary)] hover:underline underline-offset-4 decoration-dashed transition-all font-medium"
-                            >
-                              {kw.trim()}
-                            </span>
-                            {i < keywordsArray.length - 1 ? ", " : ""}
+                      <details key={pIdx} className="group border border-[var(--color-gray-200)] rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300">
+                        <summary className="flex items-center justify-between p-5 bg-[var(--color-gray-50)] cursor-pointer list-none select-none">
+                          <span className="font-bold text-[var(--color-primary)] text-[16px] md:text-[18px] pr-4">
+                            {header}
                           </span>
-                        ))}
-                      </blockquote>
+                          <div className="text-[var(--color-primary)] transition-transform duration-300 group-open:rotate-180">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="6 9 12 15 18 9"></polyline>
+                            </svg>
+                          </div>
+                        </summary>
+                        <div className="p-6 bg-white border-t border-[var(--color-gray-100)]">
+                          <ReactMarkdown 
+                            remarkPlugins={[remarkGfm, remarkMath]} 
+                            rehypePlugins={[rehypeKatex, rehypeRaw]}
+                            components={markdownComponents}
+                          >
+                            {processLinks(body)}
+                          </ReactMarkdown>
+                        </div>
+                      </details>
                     );
-                  }
-                  return <blockquote className="border-l-4 border-[var(--color-primary)] bg-[var(--color-gray-50)] py-1 px-5 rounded-r-lg italic">{children}</blockquote>;
-                }
-              }}
-            >
-              {processedContent
-                .split('\n')
-                .filter((line: string, l_idx: number) => {
-                  if (l_idx === 0 && (line.startsWith('#') || line.trim() === topic.trim())) return false;
-                  // Skip the original keyword line because we render it separately via blockquote component
-                  // but we actually want the blockquote component to handle it, so we keep it.
-                  return true;
-                })
-                .join('\n')}
-            </ReactMarkdown>
+                  })}
+                </div>
+              )}
           </div>
         ) : (
           <div className="text-[13px] md:text-[14px] text-gray-400 italic py-10 text-center">ยังไม่มีเนื้อหาสำหรับบทเรียนนี้</div>
         )}
+        </div>
+        
+        {/* กล่องสีขาวทับลูกศรด้านล่าง */}
+        <div className="absolute bottom-0 right-0 w-[14px] h-[10px] bg-white z-10 pointer-events-none" />
       </div>
 
       {/* Chapter Navigation (sticky bottom) */}
@@ -344,7 +451,7 @@ export default function CoursePage() {
     
     // Find content from lessons.json
     const topic_name = selected_topics[0];
-    const lesson_content = lessons.find(l => l.title === topic_name)?.content || "";
+    const lesson_content = lessons.find(l => cleanString(l.title) === cleanString(topic_name))?.content || "";
     
     try {
       // Send the first selected topic to the backend
@@ -373,7 +480,7 @@ export default function CoursePage() {
 
     // Find content from lessons.json
     const topic_name = selected_topics[0];
-    const lesson_content = lessons.find(l => l.title === topic_name)?.content || "";
+    const lesson_content = lessons.find(l => cleanString(l.title) === cleanString(topic_name))?.content || "";
 
     try {
       const data = await apiService.generateQuiz(topic_name, lesson_content);
@@ -424,9 +531,9 @@ export default function CoursePage() {
       {/* 1. Center Content Column */}
       <section className="flex-1 bg-white rounded-[20px] md:rounded-[24px] lg:rounded-[32px] border border-[var(--color-gray-300)] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.2)] flex flex-col overflow-hidden relative">
         {/* Fixed Header & Tabs */}
-        <div className="px-6 md:px-8 lg:px-14 pt-1.5 md:pt-2.5 shrink-0 bg-white z-20">
-          <div className="mb-1 md:mb-2">
-            <div className="text-[9px] md:text-[10px] font-bold tracking-[0.2em] text-[var(--color-gray-400)] uppercase mb-1">
+        <div className="px-6 md:px-8 lg:px-14 pt-4 md:pt-6 shrink-0 bg-white z-20">
+          <div className="mb-3 md:mb-5">
+            <div className="text-[9px] md:text-[10px] font-bold tracking-[0.2em] text-[var(--color-gray-400)] uppercase mb-1.5 md:mb-2">
               Course Module • {course.code}
             </div>
             <h1 className="text-xl md:text-2xl lg:text-4xl font-bold text-[var(--color-primary)] tracking-tight leading-[1.2]">
@@ -512,7 +619,7 @@ export default function CoursePage() {
                     questions={quiz_questions} 
                     OnClose={() => set_is_viewing_quiz(false)} 
                     userId={user?.uid}
-                    lessonId={lessons.find(l => l.title === selected_topics[0])?.id}
+                    lessonId={lessons.find(l => cleanString(l.title) === cleanString(selected_topics[0]))?.id}
                   />
                 </div>
                 <div className={!is_generating_quiz && !is_viewing_quiz ? "block h-full" : "hidden"}>
@@ -583,7 +690,7 @@ export default function CoursePage() {
       <aside className={`
         group fixed md:relative top-4 md:top-0 right-4 md:right-0 bottom-4 md:bottom-0 z-[110] md:z-20
         ${isChatVisibleOnMobile ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}
-        ${isChatExpanded ? 'w-[calc(100%-32px)] md:w-[50%]' : 'w-[calc(100%-32px)] md:w-[280px] lg:w-[320px] xl:w-[380px]'} 
+        ${isChatExpanded ? 'w-[calc(100%-32px)] md:w-[40%]' : 'w-[calc(100%-32px)] md:w-[280px] lg:w-[320px] xl:w-[380px]'} 
         shrink-0 transition-all duration-400 ease-in-out flex flex-col bg-white rounded-[24px] md:rounded-[32px] border border-[var(--color-gray-300)] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.2)]
       `}>
         {/* Toggle Expand Button (Desktop only) */}

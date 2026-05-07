@@ -517,12 +517,19 @@ button:active,
    PREMIUM SCROLLBAR - THE FINAL FIX
    ============================================================ */
 
-/* 1. Hide Arrows Globally */
+/* 1. Hide Arrows Globally / Put white box over them */
 ::-webkit-scrollbar-button,
+::-webkit-scrollbar-button:start,
+::-webkit-scrollbar-button:end,
+::-webkit-scrollbar-button:vertical:decrement,
+::-webkit-scrollbar-button:vertical:increment,
 *::-webkit-scrollbar-button {
   display: none !important;
   width: 0 !important;
   height: 0 !important;
+  background-color: #F9F9F9 !important; /* White box over the arrow */
+  color: #F9F9F9 !important;
+  -webkit-appearance: none !important;
 }
 
 /* 2. Premium Floating Scrollbar */

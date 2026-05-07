@@ -162,7 +162,9 @@ export const apiService = {
           console.error(`Final attempt failed for getUserProgress:`, error);
           return []; // Return empty progress instead of crashing the UI
         }
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1s before retry
+        // Exponential backoff: 1s, 2s, 4s...
+        const waitTime = Math.pow(2, i) * 1000;
+        await new Promise(resolve => setTimeout(resolve, waitTime));
       }
     }
     return [];
