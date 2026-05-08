@@ -115,7 +115,7 @@ export function FlashcardsTab({ topics, selected_topics, OnToggle, OnGenerate }:
           className={`
             w-full py-4 md:py-5 rounded-2xl font-bold text-lg md:text-xl transition-all duration-300
             ${selected_topic
-              ? "bg-[var(--color-primary)] text-white hover:brightness-110 hover:scale-[1.01] active:scale-95 cursor-pointer"
+              ? "bg-[#8c8cf3] text-white hover:brightness-110 hover:scale-[1.01] active:scale-95 cursor-pointer"
               : "bg-[var(--color-gray-200)] text-[var(--color-gray-400)] cursor-not-allowed opacity-50"
             }
           `}

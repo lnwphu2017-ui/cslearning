@@ -14,14 +14,17 @@ import operator
 import io
 import markdown
 from jinja2 import Environment, FileSystemLoader
-from weasyprint import HTML, CSS
+# WeasyPrint ต้อง GTK — ใช้ lazy import ในฟังก์ชัน generate_pdf แทน
+# from weasyprint import HTML, CSS
 from fastapi.responses import Response
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, BaseMessage
 from langgraph.graph import StateGraph, START, END
+import random
+import asyncio
 
-from retriever import get_retriever, get_full_syllabus, get_subject_section
+from retriever import get_retriever, get_full_syllabus, get_subject_section, search_lessons_vector
 from supabase_client import supabase
 
 load_dotenv()
@@ -104,6 +107,7 @@ class Message(BaseModel):
 class ChatRequest(BaseModel):
     messages: List[Message]
     userId: Optional[str] = None
+    currentLesson: Optional[str] = None
 
 class GenerateRequest(BaseModel):
     chapterTitle: str
@@ -111,6 +115,9 @@ class GenerateRequest(BaseModel):
 
 class GenerateExamRequest(BaseModel):
     chapters: List[Dict[str, str]]
+    courseSlug: Optional[str] = None
+    batchIdx: int = 0
+    numBatches: int = 8
 
 class PDFSummaryRequest(BaseModel):
     quizScores: Dict[str, Any]
@@ -147,6 +154,8 @@ class PDFSection(BaseModel):
 class PDFGenerateRequest(BaseModel):
     title: str
     sections: List[PDFSection]
+    score: Optional[int] = None
+    total: Optional[int] = None
     chartImage: Optional[str] = None
     footerText: Optional[str] = "CSL AI Learning Dashboard - รายงานอัตโนมัติ"
 
@@ -181,6 +190,7 @@ class ExamSchema(BaseModel):
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], operator.add]
     context: str
+    current_lesson: Optional[str] = None
 
 # 4. Load syllabus once at startup
 _syllabus_context = get_full_syllabus()
@@ -188,33 +198,42 @@ _syllabus_context = get_full_syllabus()
 # 5. Define Nodes
 async def retrieve_node(state: AgentState):
     last_message = state["messages"][-1].content
-    print(f"---CHAT QUESTION: {last_message[:80]}---")
-    # Optimize token usage: retrieve only relevant section instead of full syllabus
-    relevant_context = await get_subject_section(last_message)
+    current_lesson = state.get("current_lesson")
+    print(f"---CHAT QUESTION: {last_message[:80]} (Lesson: {current_lesson})---")
+    # Pass current_lesson as a primary focus for context retrieval
+    relevant_context = await get_subject_section(last_message, lesson_focus=current_lesson)
     return {"context": relevant_context}
 
 async def generate_node(state: AgentState):
     print("---GENERATING RESPONSE---")
+    
+    # Extract frontend-provided system prompt if exists to merge contexts
+    frontend_context = ""
+    clean_messages = []
+    for m in state["messages"]:
+        if isinstance(m, SystemMessage):
+            frontend_context += f"\n{m.content}"
+        else:
+            clean_messages.append(m)
+
     system_prompt = f"""คุณคือผู้ช่วยสอนวิทยาการคอมพิวเตอร์ (Computer Science) ระดับมหาวิทยาลัย
+{frontend_context}
 
-บทบาทของคุณ:
-- คุณเป็น AI สำหรับช่วยเรียนวิทยาการคอมพิวเตอร์โดยเฉพาะ
-- คุณต้องตอบคำถามเกี่ยวกับวิทยาการคอมพิวเตอร์ (Computer Science) เท่านั้น
-
-กฎการตอบคำถาม:
-1. เมื่อนักศึกษาถามเกี่ยวกับหลักสูตร รายวิชา บทเรียน หรือเนื้อหาในหลักสูตร ให้ตอบจากข้อมูลหลักสูตรด้านล่างเป็นหลัก โดยต้องตอบให้ครบถ้วนและถูกต้องตามเอกสาร เช่น ถ้าวิชามี 10 บท ต้องตอบครบ 10 บท ห้ามตัดออก
-2. เมื่อนักศึกษาถามเรื่อง CS ทั่วไป เช่น อธิบาย algorithm, อธิบาย data structure, อธิบาย concept ต่างๆ ให้ตอบโดยใช้ความรู้ทั่วไปด้าน CS ได้เลย แต่ถ้ามีข้อมูลในหลักสูตรที่เกี่ยวข้อง ให้อ้างอิงด้วย
-3. ห้ามตอบคำถามที่ไม่เกี่ยวข้องกับ Computer Science เช่น วิธีทำอาหาร สัตว์เลี้ยง กีฬา การเมือง ฯลฯ ให้ปฏิเสธอย่างสุภาพว่า "ขออภัยครับ ผมเป็น AI สำหรับช่วยเรียนวิทยาการคอมพิวเตอร์เท่านั้น ไม่สามารถตอบคำถามนอกเรื่อง CS ได้ครับ"
+บทบาทและหน้าที่:
+1. คุณเป็น AI สำหรับช่วยเรียนวิทยาการคอมพิวเตอร์โดยเฉพาะ ต้องตอบคำถามเกี่ยวกับ Computer Science เท่านั้น
+2. เมื่อนักศึกษาถามเกี่ยวกับหลักสูตรหรือบทเรียน ให้ใช้ข้อมูลจากส่วน "ข้อมูลหลักสูตร (Syllabus)" หรือบทเรียนปัจจุบันที่ระบุไว้
+3. หากถามเรื่อง CS ทั่วไป ให้ใช้ความรู้ด้าน CS ตอบได้ทันทีโดยพยายามเชื่อมโยงกับบทเรียนที่ผู้ใช้กำลังเรียนอยู่
+4. ปฏิเสธคำถามที่ไม่เกี่ยวข้องกับวิชาการ/คอมพิวเตอร์ (เช่น เรื่องส่วนตัว, การเมือง, กีฬา) อย่างสุภาพ
 
 รูปแบบการตอบ:
-- ตอบเป็นภาษาไทย ยกเว้นศัพท์เทคนิคให้ใช้ภาษาอังกฤษ
-- จัดรูปแบบด้วย Markdown ให้อ่านง่าย (ใช้หัวข้อ, bullet points, ตาราง ตามความเหมาะสม)
+- ตอบเป็นภาษาไทย (ศัพท์เทคนิคใช้ภาษาอังกฤษ)
+- จัดรูปแบบด้วย Markdown ให้อ่านง่าย (Header, List, Table)
 
-=== ข้อมูลหลักสูตร (Syllabus) ===
+=== ข้อมูลประกอบ (Context) ===
 {state.get('context', '')}
-=== จบข้อมูลหลักสูตร ==="""
+=== จบข้อมูลประกอบ ==="""
 
-    messages = [SystemMessage(content=system_prompt)] + list(state["messages"])
+    messages = [SystemMessage(content=system_prompt)] + clean_messages
     response = await invoke_with_fallback(messages)
     return {"messages": [response]}
 
@@ -252,7 +271,11 @@ async def chat(request: ChatRequest):
     
     try:
         # Invoke LangGraph
-        result = await app_graph.ainvoke({"messages": lc_messages, "context": ""})
+        result = await app_graph.ainvoke({
+            "messages": lc_messages, 
+            "context": "",
+            "current_lesson": request.currentLesson
+        })
         
         last_message = result["messages"][-1]
         
@@ -287,7 +310,12 @@ async def chat_stream(request: ChatRequest):
     async def generate_stream():
         full_response = ""
         try:
-            async for event in app_graph.astream_events({"messages": lc_messages, "context": ""}, version="v2"):
+            input_state = {
+                "messages": lc_messages, 
+                "context": "",
+                "current_lesson": request.currentLesson
+            }
+            async for event in app_graph.astream_events(input_state, version="v2"):
                 if event["event"] == "on_chat_model_stream":
                     chunk = event["data"]["chunk"].content
                     if chunk and isinstance(chunk, str):
@@ -314,8 +342,14 @@ async def chat_stream(request: ChatRequest):
 @app.post("/api/generate-quiz")
 async def generate_quiz(request: GenerateRequest):
     try:
-        print(f"---GENERATING QUIZ FOR: {request.chapterTitle}---")
-        context = request.content if request.content else get_subject_section(request.chapterTitle)
+        print(f"--- กำลังสร้าง QUIZ สำหรับ: {request.chapterTitle} ---")
+        
+        # ใช้ Vector Search ดึง Context ที่ละเอียดขึ้นจาก chunks
+        context = await search_lessons_vector(request.chapterTitle, limit=10)
+        
+        # หากไม่พบใน Vector Store ให้ลองใช้ syllabus/legacy search
+        if not context:
+            context = request.content if request.content else await get_subject_section(request.chapterTitle)
 
         prompt = f"""You are an expert Computer Science examiner. 
 Create a 10-question multiple-choice quiz about the following topic: {request.chapterTitle}.
@@ -355,8 +389,13 @@ Context:
 @app.post("/api/generate-flashcards")
 async def generate_flashcards(request: GenerateRequest):
     try:
-        print(f"---GENERATING FLASHCARDS FOR: {request.chapterTitle}---")
-        context = request.content if request.content else get_subject_section(request.chapterTitle)
+        print(f"--- กำลังสร้าง FLASHCARDS สำหรับ: {request.chapterTitle} ---")
+        
+        # ใช้ Vector Search เพื่อให้ได้เนื้อหาที่ตรงจุดที่สุดสำหรับ Flashcards
+        context = await search_lessons_vector(request.chapterTitle, limit=10)
+        
+        if not context:
+            context = request.content if request.content else await get_subject_section(request.chapterTitle)
 
         prompt = f"""You are an expert Computer Science educator.
 Create exactly 10 flashcards about the following topic: {request.chapterTitle}.
@@ -396,44 +435,69 @@ Context:
 
 @app.post("/api/generate-exam")
 async def generate_exam(request: GenerateExamRequest):
+    # ตรวจสอบว่ามีการส่งบทเรียนมาหรือไม่
     if not request.chapters:
         raise HTTPException(status_code=400, detail="chapters array is required")
 
     try:
-        print(f"---GENERATING EXAM FOR {len(request.chapters)} CHAPTERS---")
+        batch_idx = request.batchIdx
+        num_batches = request.numBatches
+        batch_size = 5
         
-        all_context = ""
-        chapter_titles = []
-        for i, chapter in enumerate(request.chapters):
-            title = chapter.get("title", "")
-            content = chapter.get("content", "")
-            # Truncate content to avoid exceeding token limits when combining many chapters
-            short_content = content[:1500] + "..." if len(content) > 1500 else content
-            all_context += f"\n\n--- {title} ---\n" + short_content
-            chapter_titles.append(title)
+        print(f"--- กำลังสร้างข้อสอบ BATCH {batch_idx + 1}/{num_batches} ---")
+        
+        # เตรียมรายชื่อบทเรียน
+        chapter_titles = [c.get("title", "") for c in request.chapters]
+        
+        # เลือกบทเรียนหลักสำหรับ Batch นี้
+        current_chapter_title = chapter_titles[batch_idx % len(chapter_titles)]
+        
+        # ใช้ Vector Search ดึง Context
+        context = await search_lessons_vector(current_chapter_title, limit=8, course_slug=request.courseSlug)
+        
+        # Fallback
+        if not context:
+            chapter_data = next((c for c in request.chapters if c.get("title") == current_chapter_title), request.chapters[0])
+            context = chapter_data.get("content", "")[:2000]
 
-        chapters_list_str = "\n".join([f"{i+1}. {t}" for i, t in enumerate(chapter_titles)])
+        # กำหนดสัดส่วน Bloom's Taxonomy ทั้งหมด 40 ข้อ (แบบผสมเพื่อให้กระจายทุกบทเรียน)
+        # Remember: 6, Understand: 8, Apply: 10, Analyze: 8, Evaluate: 4, Create: 4
+        bloom_distribution = [
+            'Remember', 'Understand', 'Apply', 'Analyze', 'Evaluate', 
+            'Create', 'Remember', 'Understand', 'Apply', 'Analyze',
+            'Apply', 'Understand', 'Analyze', 'Remember', 'Apply',
+            'Understand', 'Analyze', 'Apply', 'Remember', 'Understand',
+            'Apply', 'Analyze', 'Evaluate', 'Create', 'Apply',
+            'Understand', 'Analyze', 'Apply', 'Remember', 'Understand',
+            'Apply', 'Analyze', 'Evaluate', 'Create', 'Apply',
+            'Understand', 'Analyze', 'Evaluate', 'Create', 'Remember'
+        ]
+        
+        # เลือก Domain สำหรับ Batch นี้ (5 ข้อ)
+        start_idx = batch_idx * batch_size
+        end_idx = start_idx + batch_size
+        target_domains = bloom_distribution[start_idx:end_idx]
+        
+        prompt = f"""You are an expert Computer Science examiner.
+Create exactly {batch_size} multiple-choice questions based on the provided context.
+Focus on the topic: {current_chapter_title}.
 
-        prompt = f"""You are an expert Computer Science examiner creating a comprehensive final exam.
-Create exactly 20 multiple-choice questions covering ALL of the following chapters EVENLY (approximately 2 questions per chapter):
+Each question must strictly follow these assigned cognitive domains from Bloom's Taxonomy in order:
+{", ".join([f"Question {i+1}: {domain}" for i, domain in enumerate(target_domains)])}
 
-{chapters_list_str}
-
-Each question must have:
+Requirements for each question:
 - exactly 4 options
 - a correctIndex (0-3)
-- a domain from Bloom's Taxonomy: Remember, Understand, Apply, Analyze, Evaluate, Create
-- a chapterTitle indicating which chapter the question belongs to (use the exact chapter title from the list above)
+- the assigned domain from the list above
+- a chapterTitle: "{current_chapter_title}"
 
-Distribute the Bloom's domains as evenly as possible across all 20 questions.
+IMPORTANT:
+1. All questions and options MUST be written in Thai language.
+2. Use English for technical terms (e.g., "Encapsulation", "Polymorphism").
+3. Do NOT translate technical terms into Thai.
+4. Ensure the questions are challenging and accurate based on the context.
 
-Use ONLY the provided lesson content context to generate questions. Ensure accuracy based strictly on this content. Do not use general knowledge.
-
-IMPORTANT: All questions and options MUST be written in Thai language.
-Only use English for technical terms.
-Do NOT translate technical terms into Thai — keep them in English.
-
-You MUST respond ONLY with a valid JSON object in the following format:
+You MUST respond ONLY with a valid JSON object:
 {{
   "questions": [
     {{
@@ -447,13 +511,15 @@ You MUST respond ONLY with a valid JSON object in the following format:
 }}
 
 Context:
-{all_context}"""
+{context}"""
 
         result = await invoke_with_fallback([SystemMessage(content=prompt)])
-        return parse_json_from_text(result.content)
+        batch_data = parse_json_from_text(result.content)
+        
+        return batch_data
         
     except Exception as e:
-        print("Exam Generation Error:", e)
+        print(f"Exam Generation Error (Batch {request.batchIdx}):", e)
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -491,12 +557,16 @@ Respond ONLY with the Markdown Thai text."""
 @app.post("/api/generate-pdf")
 async def generate_pdf(request: PDFGenerateRequest):
     try:
-        print(f"---GENERATING PDF: {request.title}---")
+        # Lazy import — WeasyPrint ต้องการ GTK system library
+        from weasyprint import HTML, CSS
+        print(f"---GENERATING MODERN PDF: {request.title}---")
         
         # 1. Prepare data for template
         template_data = {
             "title": request.title,
-            "date": datetime.now().strftime("%d/%m/%Y %H:%M"),
+            "date": datetime.now().strftime("%d/%m/%Y"),
+            "score": request.score,
+            "total": request.total,
             "sections": [],
             "chart_image": request.chartImage,
             "footer_text": request.footerText
@@ -505,9 +575,13 @@ async def generate_pdf(request: PDFGenerateRequest):
         # 2. Process sections (convert markdown to HTML)
         for sec in request.sections:
             html_content = markdown.markdown(sec.content)
+            # สั่งขึ้นหน้าใหม่ถ้าเจอหัวข้อ "สรุปเนื้อหารายวิชา"
+            is_highlights = "สรุปเนื้อหารายวิชา" in sec.title
+            
             template_data["sections"].append({
                 "title": sec.title,
-                "content": html_content
+                "content": html_content,
+                "page_break": is_highlights
             })
             
         # 3. Render HTML using Jinja2
@@ -565,9 +639,11 @@ async def complete_lesson(request: CompleteLessonRequest):
             "lesson_id": request.lessonId,
             "is_completed": True,
             "completed_at": datetime.utcnow().isoformat()
-        }).execute()
+        }, on_conflict="user_id,lesson_id").execute()
         return {"message": "Lesson marked as completed", "data": response.data}
     except Exception as e:
+        print(f"Error in complete_lesson (user: {request.userId}, lesson: {request.lessonId}):", e)
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/user-progress/{userId}")
@@ -598,7 +674,7 @@ async def save_score(request: SaveScoreRequest):
                 "lesson_id": request.lessonId,
                 "is_completed": True,
                 "completed_at": datetime.utcnow().isoformat()
-            }).execute()
+            }, on_conflict="user_id,lesson_id").execute()
             print(f"DEBUG: Progress updated for {request.userId}")
         except Exception as prog_err:
             print(f"DEBUG: Error updating progress (non-critical): {prog_err}")
@@ -626,4 +702,4 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 5000))
     print(f"Starting server with model: {primary_model_name} (fallback: {fallback_model_name})")
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)

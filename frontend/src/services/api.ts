@@ -27,12 +27,13 @@ export const apiService = {
   },
 
   // 1.1 Chat Generation with Stream (direct to backend)
-  async streamChatMessage(messages: ChatMessage[], onChunk: (chunk: string) => void, userId?: string) {
+  async streamChatMessage(messages: ChatMessage[], onChunk: (chunk: string) => void, userId?: string, signal?: AbortSignal, currentLesson?: string) {
     try {
       const res = await fetch(`${BACKEND_URL}/api/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages, userId })
+        body: JSON.stringify({ messages, userId, currentLesson }),
+        signal
       });
       
       if (!res.ok) throw new Error('Network response was not ok');
@@ -89,12 +90,12 @@ export const apiService = {
   },
   
   // 4. Exam Generation (direct to backend - takes 60-120s)
-  async generateExam(chapters: { title: string; content: string }[]) {
+  async generateExam(chapters: { title: string; content: string }[], courseSlug?: string, batchIdx: number = 0, numBatches: number = 8) {
     try {
       const res = await fetch(`${BACKEND_URL}/api/generate-exam`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chapters })
+        body: JSON.stringify({ chapters, courseSlug, batchIdx, numBatches })
       });
       if (!res.ok) throw new Error('Network response was not ok');
       return await res.json();
@@ -213,6 +214,8 @@ export const apiService = {
   async generatePdf(data: { 
     title: string, 
     sections: { title: string, content: string }[], 
+    score?: number,
+    total?: number,
     chartImage?: string | null, 
     footerText?: string 
   }): Promise<Blob> {

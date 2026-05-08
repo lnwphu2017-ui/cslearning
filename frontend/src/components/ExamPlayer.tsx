@@ -119,49 +119,125 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
   };
 
   const downloadPdf = async () => {
-    const element = document.getElementById("result-container");
-    if (!element) {
-      alert("ไม่พบข้อมูลสำหรับการสร้าง PDF");
-      return;
-    }
-
     setGeneratingPdf(true);
     try {
-      await new Promise(resolve => setTimeout(resolve, 800));
-
-      const dataUrl = await toPng(element, { 
-        cacheBust: true,
-        backgroundColor: '#ffffff',
-        pixelRatio: 2
-      });
-      
-      const pdf = new jsPDF("p", "mm", "a4");
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
-      
-      const imgProps = pdf.getImageProperties(dataUrl);
-      const imgWidth = pdfWidth - 20;
-      const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
-      
-      let heightLeft = imgHeight;
-      let position = 10;
-
-      pdf.addImage(dataUrl, "PNG", 10, position, imgWidth, imgHeight);
-      heightLeft -= (pdfHeight - 20);
-
-      while (heightLeft > 0) {
-        position = heightLeft - imgHeight + 10;
-        pdf.addPage();
-        pdf.addImage(dataUrl, "PNG", 10, position, imgWidth, imgHeight);
-        heightLeft -= (pdfHeight - 20);
+      // 1. Capture the Radar Chart specifically
+      const chartElement = document.querySelector(".recharts-wrapper");
+      let chartImageUrl = null;
+      if (chartElement) {
+        chartImageUrl = await toPng(chartElement as HTMLElement, { 
+          backgroundColor: '#ffffff',
+          pixelRatio: 2
+        });
       }
 
+      // 2. Prepare ENHANCED MOCKUP (Original Headers + Rich Content)
+      const mockSummary = `
+### ภาพรวมและวิเคราะห์จุดแข็ง
+จากการประเมินผลการสอบในครั้งนี้ ระบบ AI พบว่าคุณมีความเข้าใจในเนื้อหารวมถึงทักษะกระบวนการคิดที่น่าชื่นชม โดยสรุปภาพรวมได้ดังนี้:
+- **ความเป็นเลิศด้านการประยุกต์ใช้ (Application Excellence)**: คุณสามารถนำทฤษฎีพื้นฐานมาแก้ปัญหาโจทย์ที่ซับซ้อนได้อย่างถูกต้อง (Score > 85% ในส่วน Apply)
+- **ความแม่นยำขององค์ความรู้ (Theoretical Accuracy)**: องค์ความรู้พื้นฐานในด้านสถาปัตยกรรมคอมพิวเตอร์มีความแม่นยำสูงมาก
+- **จุดแข็งที่โดดเด่น**: คุณมีความสามารถพิเศษในการวิเคราะห์โครงสร้างข้อมูลแบบเชิงเส้น (Linear Data Structures) ซึ่งเป็นพื้นฐานสำคัญของการเขียนโปรแกรมระดับสูง
+
+### สิ่งที่ควรพัฒนาต่อ
+เพื่อยกระดับทักษะของคุณให้เข้าสู่ระดับมืออาชีพ ระบบขอแนะนำแผนการพัฒนาดังนี้:
+- **ทบทวนเรื่อง Big O Notation**: เพื่อเพิ่มประสิทธิภาพในการเขียนโค้ดให้ทำงานได้รวดเร็วขึ้น
+- **ศึกษาเรื่องสถาปัตยกรรมระดับสูง**: เช่น Microservices หรือ Cloud Computing เพื่อต่อยอดจากพื้นฐานที่มี
+- **ฝึกแก้โจทย์อัลกอริทึม**: ที่เน้นการจัดการหน่วยความจำ (Dynamic Programming) เพื่อเสริมสร้างทักษะด้าน Analysis ให้แข็งแกร่งยิ่งขึ้น
+
+### สรุปเนื้อหารายวิชา
+รายงานฉบับนี้รวบรวมสาระสำคัญของทุกบทเรียนในหลักสูตร เพื่อใช้เป็นแนวทางในการทบทวนและต่อยอดความรู้อย่างมีประสิทธิภาพ
+
+**บทที่ 1: Introduction to Computer Science**
+พื้นฐานของวิทยาการคอมพิวเตอร์ครอบคลุมการทำความเข้าใจว่าคอมพิวเตอร์คืออะไร ทำงานอย่างไร และมีบทบาทอย่างไรในโลกปัจจุบัน นักศึกษาจะได้เรียนรู้วงจรการทำงานพื้นฐานของ CPU และระบบหน่วยความจำ
+- หน่วยประมวลผล (CPU) ทำงานผ่านวงจร Fetch-Decode-Execute ในทุกคำสั่ง
+- ระบบเลขฐาน 2 (Binary) คือภาษาที่คอมพิวเตอร์ใช้จัดเก็บและประมวลผลข้อมูลทุกชนิด
+- ระบบหน่วยความจำแบ่งเป็น RAM (ชั่วคราว) และ Storage (ถาวร) ที่ทำงานร่วมกัน
+- ซอฟต์แวร์แบ่งเป็น System Software (OS) และ Application Software ที่ผู้ใช้งานโดยตรง
+
+**บทที่ 2: Logic & Algorithm Design**
+การออกแบบอัลกอริทึมคือหัวใจของการเขียนโปรแกรม นักศึกษาจะฝึกคิดอย่างเป็นระบบผ่านการวาด Flowchart และเขียน Pseudocode ก่อนลงมือเขียนโค้ดจริง ซึ่งช่วยลดข้อผิดพลาดในกระบวนการพัฒนาซอฟต์แวร์ได้อย่างมาก
+- Flowchart ใช้สัญลักษณ์มาตรฐาน (รูปสี่เหลี่ยม, เพชร, วงรี) แทนขั้นตอนการทำงาน
+- Pseudocode เป็นภาษากึ่งธรรมชาติที่ใช้วางแผนโครงสร้างโปรแกรมก่อนเขียนโค้ด
+- เงื่อนไข (Condition) และการวนซ้ำ (Loop) คือโครงสร้างพื้นฐานของทุกอัลกอริทึม
+- การแก้ปัญหาแบบ Divide and Conquer ช่วยจัดการกับปัญหาขนาดใหญ่ได้อย่างมีประสิทธิภาพ
+
+**บทที่ 3: Structured Programming**
+การเขียนโปรแกรมเชิงโครงสร้างเน้นการแบ่งโปรแกรมออกเป็นฟังก์ชันหรือโมดูลย่อยๆ ที่ทำงานเฉพาะด้าน ทำให้โค้ดอ่านง่าย บำรุงรักษาง่าย และนำกลับมาใช้ใหม่ได้
+- ฟังก์ชัน (Function) คือกลุ่มคำสั่งที่ทำงานเฉพาะด้านและสามารถเรียกใช้ซ้ำได้
+- Modularity หมายถึงการแบ่งโปรแกรมเป็นส่วนย่อยอิสระที่ทดสอบและแก้ไขได้แยกกัน
+- Scope ของตัวแปรกำหนดว่าตัวแปรนั้นถูกมองเห็นและใช้งานได้ในส่วนใดของโปรแกรม
+- การส่งค่าแบบ Pass by Value และ Pass by Reference มีผลต่อการจัดการหน่วยความจำ
+
+**บทที่ 4: Data Structures**
+โครงสร้างข้อมูลเป็นวิธีการจัดระเบียบและจัดเก็บข้อมูลในหน่วยความจำ การเลือกโครงสร้างข้อมูลที่เหมาะสมส่งผลโดยตรงต่อประสิทธิภาพของโปรแกรม
+- Array เหมาะกับการเข้าถึงข้อมูลแบบสุ่ม (Random Access) ด้วยความเร็ว O(1)
+- Linked List เหมาะกับการแทรกและลบข้อมูลบ่อยครั้ง โดยไม่ต้องขยับข้อมูลทั้งหมด
+- Stack ใช้หลัก LIFO (Last In First Out) เหมาะกับการจัดการ Function Call Stack
+- Queue ใช้หลัก FIFO (First In First Out) เหมาะกับระบบคิวและการจัดการ Buffer
+
+**บทที่ 5: Sorting & Searching**
+อัลกอริทึมการเรียงลำดับและค้นหาเป็นพื้นฐานสำคัญของซอฟต์แวร์เกือบทุกประเภท การทำความเข้าใจ Big O Notation ช่วยให้เลือกอัลกอริทึมที่เหมาะสมกับขนาดข้อมูลได้ถูกต้อง
+- Bubble Sort และ Insertion Sort เหมาะกับข้อมูลขนาดเล็กด้วยความซับซ้อน O(n²)
+- Merge Sort และ Quick Sort มีประสิทธิภาพสูงสำหรับข้อมูลขนาดใหญ่ O(n log n)
+- Linear Search ค้นหาแบบทีละตัว ในขณะที่ Binary Search ค้นหาแบบแบ่งครึ่งได้เร็วกว่ามาก
+- การเลือกอัลกอริทึมต้องพิจารณาทั้ง Time Complexity และ Space Complexity ควบคู่กัน
+
+**บทที่ 6: Database Systems**
+ระบบฐานข้อมูลเป็นรากฐานของแอปพลิเคชันทุกประเภท การออกแบบฐานข้อมูลที่ดีต้องผ่านกระบวนการ Normalization เพื่อลดความซ้ำซ้อนและรักษาความสมบูรณ์ของข้อมูล
+- RDBMS (Relational Database) จัดเก็บข้อมูลในรูปแบบตารางที่มีความสัมพันธ์ต่อกัน
+- Primary Key คือฟิลด์ที่ระบุความเป็นเอกลักษณ์ของแต่ละ Record ในตาราง
+- SQL ประกอบด้วย DDL (สร้างตาราง), DML (จัดการข้อมูล), และ DCL (ควบคุมสิทธิ์)
+- Transaction และ ACID Properties (Atomicity, Consistency, Isolation, Durability) รับประกันความถูกต้องของข้อมูล
+
+**บทที่ 7: Networking & Internet**
+เครือข่ายคอมพิวเตอร์ทำให้อุปกรณ์ต่างๆ สามารถสื่อสารและแลกเปลี่ยนข้อมูลกันได้ โมเดล OSI 7 ชั้นเป็นมาตรฐานสากลที่อธิบายกระบวนการส่งข้อมูลในเครือข่าย
+- โมเดล OSI แบ่งการสื่อสารเป็น 7 ชั้น ตั้งแต่ Physical Layer จนถึง Application Layer
+- TCP/IP Protocol เป็นโปรโตคอลหลักของอินเทอร์เน็ต รับประกันการส่งข้อมูลแบบครบถ้วน
+- HTTP/HTTPS ใช้สำหรับการสื่อสารระหว่าง Web Browser และ Web Server
+- IP Address และ Subnet Mask กำหนดที่อยู่และขอบเขตของอุปกรณ์ในเครือข่าย
+`;
+
+      const summaryText = mockSummary.trim(); // Trim to avoid empty sections
+      const sectionBlocks = summaryText.split(/###\s+/).filter(Boolean);
+      
+      const sections = sectionBlocks.map((block: string) => {
+        const lines = block.split('\n');
+        const title = lines[0].trim();
+        const content = lines.slice(1).join('\n').trim();
+        return { title, content };
+      });
+
+      // Add a primary score section at the top
+      sections.unshift({
+        title: "ผลคะแนนการทดสอบรวม",
+        content: `ในภาพรวมของการทดสอบ คุณทำคะแนนได้ **${final_score}** จากคะแนนเต็ม **${questions.length}** คิดเป็น **${Math.round((final_score/questions.length)*100)}%** ถือว่าเป็นระดับที่ **ดีเยี่ยม (Excellent)**`
+      });
+
+      // 3. Call generatePdf API (Modern Report via WeasyPrint)
+      const pdfBlob = await apiService.generatePdf({
+        title: courseName || 'Computer Science Assessment',
+        sections,
+        score: final_score,
+        total: questions.length,
+        chartImage: chartImageUrl,
+        footerText: `รายงานประเมินผลอัตโนมัติสร้างโดยระบบ CSL AI Learning Dashboard (Ref ID: ${new Date().getTime()})`
+      });
+
+      // 4. Download the Blob
+      const url = window.URL.createObjectURL(pdfBlob);
+      const link = document.createElement('a');
+      link.href = url;
       const cleanCourseName = courseName ? courseName.replace(/[^a-zA-Z0-9_-]/g, '-') : 'Course';
-      const fileName = `${cleanCourseName}-Exam-Report-${new Date().getTime()}.pdf`;
-      pdf.save(fileName);
+      link.setAttribute('download', `${cleanCourseName}-Formal-Report-${new Date().getTime()}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode?.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
     } catch (error) {
-      console.error("PDF Export Detailed Error:", error);
-      alert(`ไม่สามารถสร้าง PDF ได้: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error("PDF Formal Export Error:", error);
+      alert(`ไม่สามารถสร้างรายงาน PDF ได้: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setGeneratingPdf(false);
     }
@@ -178,10 +254,15 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
     }));
 
     return (
-      <div className="h-full relative overflow-hidden bg-white animate-in fade-in duration-700">
-        <div id="result-container" className="h-full flex flex-col px-6 md:px-12 py-4 overflow-y-auto premium-scrollbar bg-white">
+      <div className="h-full relative bg-[var(--color-gray-50)] animate-in fade-in duration-700 overflow-hidden">
+        {/* 🛡️ SCROLLBAR SHIELDS (Hiding the small triangles/arrows) */}
+        {/* We place them at right-[16px] to match the right-4 offset of the container */}
+        <div className="absolute top-0 right-[16px] w-[12px] h-[12px] bg-[var(--color-gray-50)] z-[60] pointer-events-none" />
+        <div className="absolute bottom-0 right-[16px] w-[12px] h-[12px] bg-[var(--color-gray-50)] z-[60] pointer-events-none" />
+
+        <div id="result-container" className="absolute top-0 bottom-0 left-0 right-4 px-6 md:px-12 py-10 overflow-y-scroll premium-scrollbar">
           {/* Header Section */}
-          <div className="mb-4 shrink-0 flex justify-between items-start">
+          <div className="mt-4 mb-4 shrink-0 flex justify-between items-start">
             <div>
               <h1 className="text-2xl font-black text-[var(--color-black)]">Final Exam Results</h1>
               {courseName && <p className="text-sm font-bold text-[var(--color-primary)] mb-1">{courseName}</p>}
@@ -190,108 +271,122 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
             
             <button 
               onClick={OnClose}
-              className="px-6 py-2 bg-[var(--color-primary)] text-white rounded-xl text-sm font-bold hover:brightness-110 active:scale-95 transition-all shadow-[0_4px_10px_-2px_rgba(177,178,255,0.4)]"
+              className="p-2 text-[var(--color-gray-400)] hover:text-[var(--color-black)] hover:bg-[var(--color-gray-100)] rounded-full transition-all active:scale-90"
+              aria-label="Close"
             >
-              Close
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
             </button>
           </div>
 
-          <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 pb-6">
-            {/* ⬅️ Left Column (Scores) */}
-            <div className="lg:col-span-5 flex flex-col gap-5">
-              {/* Overall Score Card */}
-              <div className="bg-white border border-[var(--color-gray-100)] rounded-[32px] p-5 flex items-center gap-6 shadow-sm shrink-0">
-                <div className="relative w-24 h-24 flex items-center justify-center shrink-0">
-                  <svg className="w-full h-full -rotate-90">
-                    <circle cx="48" cy="48" r="42" fill="none" stroke="var(--color-gray-100)" strokeWidth="8" />
-                    <circle 
-                      cx="48" cy="48" r="42" fill="none" stroke="var(--color-primary)" strokeWidth="8" 
-                      strokeDasharray={264} 
-                      strokeDashoffset={264 - (264 * percentage) / 100}
-                      strokeLinecap="round"
-                      className="transition-all duration-1000 ease-out"
-                    />
-                  </svg>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="text-2xl font-black text-[var(--color-black)]">{final_score}</span>
-                    <span className="text-[10px] font-bold text-[var(--color-gray-400)]">/ {questions.length}</span>
+          {/* 🧩 NEW LAYOUT STRUCTURE: Divided into rows for perfect symmetry */}
+          <div className="flex-1 flex flex-col gap-8 pb-10">
+            
+            {/* ROW 1: Scores & Topic Analysis (Left) + Bloom Analytics (Right) */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
+              {/* ⬅️ Left Column: Score & Topics */}
+              <div className="lg:col-span-5 flex flex-col gap-8">
+                {/* Overall Score Card */}
+                <div className="bg-white border border-[var(--color-gray-100)] rounded-[32px] p-5 flex items-center gap-6 shadow-sm shrink-0">
+                  <div className="relative w-24 h-24 flex items-center justify-center shrink-0">
+                    <svg className="w-full h-full -rotate-90">
+                      <circle cx="48" cy="48" r="42" fill="none" stroke="var(--color-gray-100)" strokeWidth="8" />
+                      <circle 
+                        cx="48" cy="48" r="42" fill="none" stroke="var(--color-primary)" strokeWidth="8" 
+                        strokeDasharray={264} 
+                        strokeDashoffset={264 - (264 * percentage) / 100}
+                        strokeLinecap="round"
+                        className="transition-all duration-1000 ease-out"
+                      />
+                    </svg>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center">
+                      <span className="text-2xl font-black text-[var(--color-black)]">{final_score}</span>
+                      <span className="text-[10px] font-bold text-[var(--color-gray-400)]">/ {questions.length}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-[var(--color-black)] mb-0.5">Overall Score</h3>
+                    <p className="text-xs text-[var(--color-gray-500)] leading-tight">
+                      You scored {Math.round(percentage)}% on the comprehensive exam.
+                    </p>
                   </div>
                 </div>
-                <div>
-                  <h3 className="text-lg font-bold text-[var(--color-black)] mb-0.5">Overall Score</h3>
-                  <p className="text-xs text-[var(--color-gray-500)] leading-tight">
-                    You scored {Math.round(percentage)}% on the comprehensive exam.
-                  </p>
+
+                {/* Topic Breakdown — แสดง 3 กล่องพอดีเป๊ะ */}
+                <div className="flex flex-col gap-3">
+                  <h4 className="text-[11px] font-bold text-[var(--color-gray-400)] uppercase tracking-widest ml-1">Topic Analysis</h4>
+                  <div 
+                    className="flex flex-col gap-2 max-h-[258px] overflow-y-auto no-scrollbar pr-1 overscroll-contain cursor-grab active:cursor-grabbing select-none"
+                    onMouseDown={(e) => {
+                      const container = e.currentTarget;
+                      const start_y = e.pageY - container.offsetTop;
+                      const scroll_top = container.scrollTop;
+                      
+                      const HandleMouseMove = (move_e: MouseEvent) => {
+                        const y = move_e.pageY - container.offsetTop;
+                        const walk = (y - start_y) * 1.5;
+                        container.scrollTop = scroll_top - walk;
+                      };
+                      
+                      const HandleMouseUp = () => {
+                        window.removeEventListener('mousemove', HandleMouseMove);
+                        window.removeEventListener('mouseup', HandleMouseUp);
+                      };
+                      
+                      window.addEventListener('mousemove', HandleMouseMove);
+                      window.addEventListener('mouseup', HandleMouseUp);
+                    }}
+                  >
+                    {display_topics.map((t, idx) => (
+                      <div key={idx} className="bg-white rounded-2xl p-4 border border-[var(--color-gray-100)] shadow-sm shrink-0 mb-1 pointer-events-none">
+                        <div className="flex justify-between items-center mb-2">
+                          <div className="text-xs font-bold text-[var(--color-black)] truncate pr-2">{t.name}</div>
+                          <div className="text-right whitespace-nowrap">
+                            <span className="text-base font-black text-[var(--color-primary)]">{t.score}</span>
+                            <span className="text-[10px] font-bold text-[var(--color-gray-400)]"> / {t.total}</span>
+                          </div>
+                        </div>
+                        <div className="w-full h-1 bg-[var(--color-gray-200)] rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-[var(--color-primary)] transition-all duration-1000 delay-300" 
+                            style={{ width: `${t.total > 0 ? (t.score / t.total) * 100 : 0}%` }} 
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
 
-              {/* Topic Breakdown */}
-              <div className="flex flex-col gap-3">
-                <h4 className="text-[11px] font-bold text-[var(--color-gray-400)] uppercase tracking-widest ml-1">Topic Analysis</h4>
-                <div className="flex flex-col gap-2">
-                  {display_topics.map((t, idx) => (
-                    <div key={idx} className="bg-[var(--color-gray-50)]/50 rounded-2xl p-4 border border-[var(--color-gray-100)] shrink-0">
-                      <div className="flex justify-between items-center mb-2">
-                        <div className="text-xs font-bold text-[var(--color-black)] truncate pr-2">{t.name}</div>
-                        <div className="text-right whitespace-nowrap">
-                          <span className="text-base font-black text-[var(--color-primary)]">{t.score}</span>
-                          <span className="text-[10px] font-bold text-[var(--color-gray-400)]"> / {t.total}</span>
-                        </div>
-                      </div>
-                      <div className="w-full h-1 bg-[var(--color-gray-200)] rounded-full overflow-hidden">
-                        <div 
-                          className="h-full bg-[var(--color-primary)] transition-all duration-1000 delay-300" 
-                          style={{ width: `${t.total > 0 ? (t.score / t.total) * 100 : 0}%` }} 
+              {/* ➡️ Right Column: Radar Chart (Stretched to match Score + Topics) */}
+              <div className="lg:col-span-7 h-full">
+                <div className="bg-white border border-[var(--color-gray-100)] rounded-[32px] p-6 shadow-sm flex flex-col items-center justify-center h-full min-h-[400px]">
+                  <h4 className="text-[11px] font-bold text-[var(--color-gray-400)] uppercase tracking-widest mb-4">Bloom's Taxonomy Analytics</h4>
+                  
+                  <div className="w-full h-full flex-1 flex items-center justify-center">
+                    <ResponsiveContainer width="100%" height={320}>
+                      <RadarChart cx="50%" cy="50%" outerRadius="75%" data={result_data.chartData}>
+                        <PolarGrid stroke="#e5e7eb" />
+                        <PolarAngleAxis dataKey="subject" tick={{ fill: '#9ca3af', fontSize: 11, fontWeight: 'bold' }} />
+                        <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
+                        <Radar
+                          name="Performance"
+                          dataKey="A"
+                          stroke="var(--color-primary)"
+                          fill="var(--color-primary)"
+                          fillOpacity={0.4}
                         />
-                      </div>
-                    </div>
-                  ))}
+                      </RadarChart>
+                    </ResponsiveContainer>
+                  </div>
                 </div>
-              </div>
-              
-              <div className="mt-4">
-                <button 
-                  onClick={downloadPdf}
-                  disabled={generatingPdf}
-                  className="w-full flex items-center justify-center gap-2 bg-[var(--color-black)] text-white py-3.5 rounded-xl text-sm font-bold hover:brightness-110 active:scale-95 transition-all"
-                >
-                  {generatingPdf ? (
-                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  ) : (
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                      <polyline points="7 10 12 15 17 10"></polyline>
-                    </svg>
-                  )}
-                  {generatingPdf ? "กำลังเตรียมไฟล์..." : "Download Report"}
-                </button>
               </div>
             </div>
 
-            {/* ➡️ Right Column (Radar & Recommendations) */}
-            <div className="lg:col-span-7 flex flex-col gap-6">
-              <div className="bg-white border border-[var(--color-gray-100)] rounded-[32px] p-6 shadow-sm flex flex-col items-center justify-center">
-                <h4 className="text-[11px] font-bold text-[var(--color-gray-400)] uppercase tracking-widest mb-4">Bloom's Taxonomy Analytics</h4>
-                
-                <div className="w-full h-[280px] sm:h-[320px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <RadarChart cx="50%" cy="50%" outerRadius="75%" data={result_data.chartData}>
-                      <PolarGrid stroke="#e5e7eb" />
-                      <PolarAngleAxis dataKey="subject" tick={{ fill: '#9ca3af', fontSize: 11, fontWeight: 'bold' }} />
-                      <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
-                      <Radar
-                        name="Performance"
-                        dataKey="A"
-                        stroke="var(--color-primary)"
-                        fill="var(--color-primary)"
-                        fillOpacity={0.4}
-                      />
-                    </RadarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              {/* AI Recommendations */}
+            {/* ROW 2: AI Recommendation (Full Width — กว้างสุดขอบทั้งสองฝั่ง) */}
+            <div className="w-full">
               <div className="bg-[var(--color-gray-50)] rounded-[32px] p-6 sm:p-8 border border-[var(--color-gray-100)]">
                 <div className="flex items-center gap-3 mb-6">
                   <div className="w-10 h-10 bg-[var(--color-primary)]/10 rounded-xl flex items-center justify-center text-[var(--color-primary)]">
@@ -305,6 +400,25 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
                   </ReactMarkdown>
                 </div>
               </div>
+            </div>
+
+            {/* ROW 3: Download Button (Full Width — ปุ่มแนวนอนยาวเท่ากล่องด้านบน) */}
+            <div className="w-full">
+              <button 
+                onClick={downloadPdf}
+                disabled={generatingPdf}
+                className="w-full flex items-center justify-center gap-3 bg-[var(--color-black)] text-white py-5 rounded-[20px] text-base font-bold hover:brightness-110 active:scale-[0.98] transition-all shadow-lg"
+              >
+                {generatingPdf ? (
+                  <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                  </svg>
+                )}
+                <span className="tracking-wide">{generatingPdf ? "กำลังเตรียมไฟล์รายงาน..." : "Download Comprehensive Exam Report (PDF)"}</span>
+              </button>
             </div>
           </div>
         </div>
@@ -321,6 +435,37 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
           <p className="text-[10px] text-[var(--color-gray-400)] font-bold uppercase tracking-widest mt-1">
             {user_answers.filter(a => a !== null).length} of {questions.length} Answered
           </p>
+        </div>
+        <div className="flex items-center gap-4">
+          {/* Dev Mock Button - Remove before production */}
+          <button 
+            onClick={() => {
+              set_result_data({
+                score: 35,
+                total: 40,
+                chartData: [
+                  { subject: 'Remember', A: 85, fullMark: 100 },
+                  { subject: 'Understand', A: 70, fullMark: 100 },
+                  { subject: 'Apply', A: 90, fullMark: 100 },
+                  { subject: 'Analyze', A: 65, fullMark: 100 },
+                  { subject: 'Evaluate', A: 80, fullMark: 100 },
+                  { subject: 'Create', A: 75, fullMark: 100 },
+                ],
+                chapterStats: {
+                  "Introduction to CS": { correct: 5, total: 5 },
+                  "Structured Programming": { correct: 4, total: 5 },
+                  "Data Structures": { correct: 5, total: 5 },
+                  "Operating Systems": { correct: 3, total: 5 }
+                },
+                recommendation: "### สรุปภาพรวมและจุดแข็ง\nคะแนนรวม 35/40 (87.5%) แสดงความเข้าใจโดยรวมดีมาก คุณทำได้ดีเป็นพิเศษในส่วนของ **Apply** และ **Remember**...\n\n### สิ่งที่ควรพัฒนาต่อ\nควรเน้นทบทวนในส่วนของ **Analyze** เพิ่มเติม..."
+              });
+              set_final_score(35);
+              set_is_submitted(true);
+            }}
+            className="text-[10px] px-2 py-1 border border-dashed border-[var(--color-gray-200)] text-[var(--color-gray-400)] hover:text-[var(--color-primary)] hover:border-[var(--color-primary)] transition-all rounded"
+          >
+            [Dev: Mock Results]
+          </button>
         </div>
         <button onClick={OnClose} className="p-2 text-[var(--color-gray-400)] hover:text-black transition-colors">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">

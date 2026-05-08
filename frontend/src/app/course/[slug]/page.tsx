@@ -38,8 +38,7 @@ function ChapterView({
   topics: string[],
   lessons: any[],
   onChangeChapter: (idx: number) => void,
-  onKeywordClick: (keyword: string) => void,
-  onCompleteLesson?: (lessonId: string) => void
+  onKeywordClick: (keyword: string) => void
 }) {
   const contentRef = React.useRef<HTMLDivElement>(null);
   const topic = topics[chapterIdx] || "";
@@ -78,7 +77,7 @@ function ChapterView({
   
   // First, find where the first dropdown should start (the first bold header)
   // 3. แยกส่วนเกริ่นนำ (Intro) และส่วนหัวข้อ (Dropdowns)
-  const allParts = contentToProcess.split(/\n\n(?=\*\*)/).filter(p => p.trim() !== "");
+  const allParts = contentToProcess.split(/\n(?=\*\*)/).filter(p => p.trim() !== "");
   let introPartText = "";
   let sectionCandidates: string[] = [];
   let hasFoundFirstBox = false;
@@ -109,8 +108,8 @@ function ChapterView({
   sectionCandidates.forEach((part) => {
     const match = part.match(/^\*\*([^\*]+)\*\*(.*)/s);
     if (match) {
-      // ล้างเครื่องหมาย * และช่องว่างทุกตัวที่อยู่ที่ขอบหน้าและหลัง
-      let header = match[1].replace(/^[* \s]+|[* \s]+$/g, '').trim();
+      // ล้างเครื่องหมาย * และช่องว่างทุกตัวที่อยู่ที่ขอบหน้าและหลัง รวมถึงเครื่องหมาย :
+      let header = match[1].replace(/^[* \s:]+|[* \s:]+$/g, '').trim();
       let rawBody = match[2];
 
       // 0. แก้ไขข้อผิดพลาดกรณีเนื้อหาย่อหน้าติดมากับชื่อหัวข้อ (Corrupted Headers)
@@ -187,19 +186,23 @@ function ChapterView({
       const hasEnglishParens = header.includes('(') && header.includes(')');
       const shouldStartNewBox = hasEnglishParens && !isExtensionPrefix && !isRelatedToPrevious && !isSentence;
 
-      // ถ้าเป็นกล่องใหม่ (หัวข้อหลัก) ให้ตัดข้อความ Subheading ที่อยู่บรรทัดเดียวกับหัวข้อทิ้ง
-      // แต่ถ้าเป็นหัวข้อย่อย (เช่น **ข้อจำกัด**) ให้เก็บข้อความบรรทัดนั้นไว้ เพราะคือเนื้อหาจริงๆ
+      // ถ้าเป็นกล่องใหม่ (หัวข้อหลัก) และเนื้อหามีการขึ้นบรรทัดใหม่หลังหัวข้อ 
+      // ให้ตัดส่วนหัวข้อที่อาจตกค้างในบรรทัดแรกออก แต่ต้องระวังไม่ให้ไปตัดโดน Subheader ในเนื้อหา
       if (shouldStartNewBox || groupedSections.length === 0) {
-        const firstNewlineMatch = rawBody.match(/^([^\n\r]*)([\n\r]+.*)?$/s);
+        const firstNewlineMatch = rawBody.match(/^([^\n\r]*)([\n\r]+.*)$/s);
         if (firstNewlineMatch) {
-          const sameLineText = firstNewlineMatch[1];
-          if (sameLineText.trim().length > 0) {
+          const sameLineText = firstNewlineMatch[1].trim();
+          // ถ้าข้อความในบรรทัดเดียวกับหัวข้อสั้นมาก (เช่น เป็นแค่เศษเครื่องหมาย) หรือเหมือนหัวข้อ ให้ตัดทิ้ง
+          if (sameLineText.length < 5 || header.includes(sameLineText)) {
             rawBody = firstNewlineMatch[2] || "";
           }
         }
       }
       
       let body = rawBody.trim();
+
+      // กรองหัวข้อที่ว่างเปล่าหรือมีแต่เครื่องหมายดาว
+      if (!header || header === "**") return;
 
       if (groupedSections.length > 0 && (!shouldStartNewBox || isTechnicalSub)) {
         // ถ้ารวมกล่อง
@@ -212,7 +215,10 @@ function ChapterView({
         groupedSections[groupedSections.length - 1].body += `\n\n**${header}**\n${body}`;
       }
     } else if (groupedSections.length > 0) {
-      groupedSections[groupedSections.length - 1].body += '\n\n' + part.trim();
+      const trimmed = part.trim();
+      if (trimmed && trimmed !== "**") {
+        groupedSections[groupedSections.length - 1].body += '\n\n' + trimmed;
+      }
     }
   });
 
@@ -348,7 +354,7 @@ function ChapterView({
                       <details key={pIdx} className="group border border-[var(--color-gray-200)] rounded-2xl overflow-hidden transition-all duration-300">
                         <summary className="flex items-center justify-between p-5 bg-[var(--color-gray-50)] cursor-pointer list-none select-none">
                           <span className="text-slate-800 font-normal text-[15px] md:text-[16px] pr-4 transition-colors duration-300 group-open:text-[var(--color-primary)]">
-                            {header.replace(/\*/g, '')}
+                            {header.replace(/\*/g, '').replace(/\s*:\s*$/, '').trim()}
                           </span>
                           <div className="text-slate-400 transition-all duration-300 group-open:text-[var(--color-primary)] group-open:rotate-180">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -397,9 +403,6 @@ function ChapterView({
         </div>
         <button
           onClick={() => {
-            if (matchingLesson?.id && onCompleteLesson) {
-              onCompleteLesson(matchingLesson.id);
-            }
             if (chapterIdx < topics.length - 1) {
               onChangeChapter(chapterIdx + 1);
             } else {
@@ -485,7 +488,6 @@ export default function CoursePage() {
   
   const { user } = useAuth();
   const [lessons, setLessons] = useState<any[]>([]);
-  const [completedLessonIds, setCompletedLessonIds] = useState<string[]>([]);
   const [loadingLessons, setLoadingLessons] = useState(true);
 
   // Flashcards States
@@ -495,6 +497,8 @@ export default function CoursePage() {
 
   // Quiz States
   const [is_generating_quiz, set_is_generating_quiz] = useState(false);
+  const [quiz_progress, set_quiz_progress] = useState(0);
+  const [quiz_loading_step, set_quiz_loading_step] = useState("");
   const [is_viewing_quiz, set_is_viewing_quiz] = useState(false);
   const [quiz_questions, set_quiz_questions] = useState<{
     question: string, 
@@ -505,8 +509,12 @@ export default function CoursePage() {
 
   // Exam States
   const [is_generating_exam, set_is_generating_exam] = useState(false);
+  const [exam_progress, set_exam_progress] = useState(0);
+  const [exam_loading_step, set_exam_loading_step] = useState("");
   const [is_viewing_exam, set_is_viewing_exam] = useState(false);
   const [exam_questions, set_exam_questions] = useState<any[]>([]);
+  const [current_exam_batch, set_current_exam_batch] = useState(0);
+  const [total_exam_batches] = useState(8);
 
   useEffect(() => {
     const current_slug = Array.isArray(slug) ? slug[0] : slug;
@@ -531,20 +539,7 @@ export default function CoursePage() {
     loadLessons();
   }, [slug]);
 
-  // Fetch completed lessons when user is available
-  useEffect(() => {
-    async function loadProgress() {
-      if (user?.uid) {
-        try {
-          const completedIds = await apiService.getUserProgress(user.uid);
-          setCompletedLessonIds(completedIds);
-        } catch (err) {
-          console.error("Failed to load user progress:", err);
-        }
-      }
-    }
-    loadProgress();
-  }, [user]);
+
 
   useEffect(() => {
     if (!course && typeof window !== "undefined") {
@@ -564,18 +559,7 @@ export default function CoursePage() {
     );
   };
 
-  const handleCompleteLesson = async (lessonId: string) => {
-    if (!user) {
-      alert("กรุณาเข้าสู่ระบบก่อนบันทึกความก้าวหน้า");
-      return;
-    }
-    try {
-      await apiService.completeLesson(user.uid, lessonId);
-      setCompletedLessonIds([...completedLessonIds, lessonId]);
-    } catch (err) {
-      console.error("Failed to complete lesson:", err);
-    }
-  };
+
 
   const HandleGenerateFlashcards = async () => {
     if (selected_topics.length === 0) return;
@@ -608,8 +592,34 @@ export default function CoursePage() {
 
   const HandleGenerateQuiz = async () => {
     if (selected_topics.length === 0) return;
-
+    
     set_is_generating_quiz(true);
+    set_quiz_progress(0);
+    set_quiz_loading_step("กำลังเตรียมบริบทของบทเรียน...");
+
+    // จำลอง Progress ให้ลื่นไหล
+    const progressInterval = setInterval(() => {
+      set_quiz_progress(prev => {
+        if (prev < 92) return prev + (Math.random() * 0.8);
+        return prev;
+      });
+    }, 150);
+
+    // ฟังก์ชันช่วยเปลี่ยนข้อความ Loading เป็นระยะ
+    const loadingInterval = setInterval(() => {
+      const steps = [
+        "กำลังวิเคราะห์ประเด็นสำคัญในเนื้อหา...",
+        "กำลังสังเคราะห์ชุดคำถามเชิงวิเคราะห์...",
+        "กำลังสร้างตัวเลือกและคำอธิบายโดยละเอียด...",
+        "กำลังตรวจสอบคุณภาพและความถูกต้องของข้อสอบ...",
+        "อีกสักครู่ ข้อสอบของคุณจะพร้อมใช้งาน..."
+      ];
+      set_quiz_loading_step(prev => {
+        const currentIdx = steps.indexOf(prev);
+        if (currentIdx < steps.length - 1) return steps[currentIdx + 1];
+        return prev;
+      });
+    }, 2500);
 
     // Find content from lessons.json
     const topic_name = selected_topics[0];
@@ -618,26 +628,39 @@ export default function CoursePage() {
     try {
       const data = await apiService.generateQuiz(topic_name, lesson_content);
       
-      // Map API response to match the QuizPlayer expected format
       const mappedQuestions = data.questions.map((q: any) => ({
         question: q.question,
         options: q.options,
         correct_answer: q.correctIndex,
-        explanation: q.explanation // เพิ่มคำอธิบายเฉลย
+        explanation: q.explanation
       }));
       
-      set_quiz_questions(mappedQuestions);
-      set_is_viewing_quiz(true);
+      set_quiz_progress(100);
+      setTimeout(() => {
+        set_quiz_questions(mappedQuestions);
+        set_is_viewing_quiz(true);
+      }, 500);
     } catch (error) {
       console.error("Failed to generate quiz:", error);
       alert("เกิดข้อผิดพลาดในการสร้างข้อสอบ");
     } finally {
-      set_is_generating_quiz(false);
+      setTimeout(() => {
+        clearInterval(loadingInterval);
+        clearInterval(progressInterval);
+        set_is_generating_quiz(false);
+        set_quiz_loading_step("");
+      }, 800);
     }
   };
 
   const HandleGenerateExam = async () => {
     set_is_generating_exam(true);
+    set_exam_progress(0);
+    set_current_exam_batch(0);
+    set_exam_loading_step("กำลังวิเคราะห์โครงสร้างเนื้อหาเพื่อออกแบบข้อสอบ...");
+    
+    const collected_questions: any[] = [];
+    
     try {
       const examChapters = course.topics.map((topic: string) => {
         const matchingLesson = lessons.find(l => cleanString(l.title) === cleanString(topic));
@@ -647,23 +670,56 @@ export default function CoursePage() {
         };
       });
 
-      const data = await apiService.generateExam(examChapters);
+      // วนลูปเรียก API ทีละ Batch พร้อมแสดงสถานะจริง
+      for (let i = 0; i < total_exam_batches; i++) {
+        set_current_exam_batch(i + 1);
+        
+        // คำนวณหัวข้อที่กำลังประมวลผล
+        const current_topic = course.topics[i % course.topics.length];
+        
+        // อัปเดตข้อความสถานะจริง: แสดงเฉพาะชื่อบทเรียนที่กำลังทำ
+        set_exam_loading_step(`กำลังประมวลผลเนื้อหา: "${current_topic}"...`);
+        
+        // อัปเดตความคืบหน้าจริงตามสัดส่วน Batch
+        const real_progress = Math.floor((i / total_exam_batches) * 100);
+        set_exam_progress(real_progress);
+        
+        const data = await apiService.generateExam(examChapters, slug, i, total_exam_batches);
+        
+        if (data && data.questions) {
+          const mappedBatch = data.questions.map((q: any) => ({
+            question: q.question,
+            options: q.options,
+            correct_answer: q.correctIndex,
+            domain: q.domain,
+            chapterTitle: q.chapterTitle
+          }));
+          collected_questions.push(...mappedBatch);
+        }
+      }
+
+      // ขั้นตอนสุดท้ายหลังประมวลผล AI เสร็จสิ้น
+      set_exam_loading_step("กำลังจัดเรียงและสุ่มชุดข้อสอบ...");
+      set_exam_progress(95);
+
+      const shuffled = [...collected_questions].sort(() => Math.random() - 0.5);
       
-      const mappedQuestions = data.questions.map((q: any) => ({
-        question: q.question,
-        options: q.options,
-        correct_answer: q.correctIndex,
-        domain: q.domain,
-        chapterTitle: q.chapterTitle
-      }));
+      // หน่วงเวลาเล็กน้อยเพื่อให้ผู้ใช้เห็นสถานะสุดท้าย
+      await new Promise(resolve => setTimeout(resolve, 800));
       
-      set_exam_questions(mappedQuestions);
+      set_exam_progress(100);
+      set_exam_questions(shuffled);
       set_is_viewing_exam(true);
+
     } catch (error) {
       console.error("Failed to generate exam:", error);
       alert("เกิดข้อผิดพลาดในการสร้างข้อสอบจำลอง");
     } finally {
-      set_is_generating_exam(false);
+      // ปิดสถานะการโหลด
+      setTimeout(() => {
+        set_is_generating_exam(false);
+        set_exam_loading_step("");
+      }, 500);
     }
   };
 
@@ -700,12 +756,12 @@ export default function CoursePage() {
           </div>
         </div>
 
-        <div className="flex-1 relative overflow-hidden p-0.5 md:p-1">
-          <div className={`h-full ${
-            activeTab === "Content"
-              ? "overflow-hidden flex flex-col"
-              : "overflow-hidden no-scrollbar flex flex-col"
-          } relative z-0`}>
+        <div className="flex-1 relative overflow-hidden">
+            <div className={`h-full ${
+              activeTab === "Content"
+                ? "overflow-hidden flex flex-col"
+                : "overflow-hidden flex flex-col"
+            } relative z-0`}>
             {/* 📋 Wrapper สำหรับจัดกึ่งกลางเนื้อหาภายใน Tab */}
             <div className="h-full flex-1 min-h-0 flex flex-col">
               
@@ -717,7 +773,6 @@ export default function CoursePage() {
                   lessons={lessons}
                   onChangeChapter={setCurrentChapterIdx}
                   onKeywordClick={(kw) => setExternalChatPrompt(kw)}
-                  onCompleteLesson={handleCompleteLesson}
                 />
               </div>
 
@@ -754,13 +809,9 @@ export default function CoursePage() {
                     <div className={is_generating_quiz ? "block h-full" : "hidden"}>
                       <FlashcardsLoading 
                         title="Generating Quiz" 
-                        messages={[
-                          "กำลังสุ่มประเด็นสำคัญมาออกข้อสอบ...",
-                          "กำลังสร้างตัวเลือกที่ท้าทายความสามารถ...",
-                          "กำลังตรวจสอบความถูกต้องของเฉลย...",
-                          "กำลังคัดเลือกข้อสอบที่มีคุณภาพ...",
-                          "อีกสักครู่ ข้อสอบของคุณจะพร้อมแล้ว..."
-                        ]}
+                        progress={quiz_progress}
+                        subtitle={quiz_loading_step}
+                        messages={[]}
                       />
                     </div>
                     <div className={!is_generating_quiz && is_viewing_quiz ? "block h-full" : "hidden"}>
@@ -795,16 +846,11 @@ export default function CoursePage() {
                     <div className={is_generating_exam ? "block h-full" : "hidden"}>
                       <FlashcardsLoading 
                         title="Generating Examination" 
-                        messages={[
-                          "กำลังรวบรวมเนื้อหาจากทุกบทเรียน...",
-                          "กำลังคัดเลือกข้อสอบให้ครอบคลุมหลักสูตร...",
-                          "กำลังสร้างชุดข้อสอบจำลองที่หลากหลาย...",
-                          "กำลังจัดเตรียมเฉลยและบทวิเคราะห์...",
-                          "ระบบกำลังประมวลผลข้อสอบไล่ (Final Exam)..."
-                        ]}
+                        progress={exam_progress}
+                        subtitle={exam_loading_step}
                       />
                     </div>
-                    <div className={!is_generating_exam && is_viewing_exam ? "block h-full" : "hidden"}>
+                    <div className={!is_generating_exam && is_viewing_exam ? "flex flex-col h-full" : "hidden"}>
                       <ExamPlayer 
                         questions={exam_questions} 
                         topics={course.topics}
@@ -813,11 +859,33 @@ export default function CoursePage() {
                         OnClose={() => set_is_viewing_exam(false)} 
                       />
                     </div>
-                    <div className={!is_generating_exam && !is_viewing_exam ? "block h-full" : "hidden"}>
+                    <div className={!is_generating_exam && !is_viewing_exam ? "block h-full relative" : "hidden"}>
                       <ExamTab 
                         course_name={course.name_en}
                         OnGenerate={HandleGenerateExam}
                       />
+                      {/* Dev Mock Button at the bottom of the tab */}
+                      <div className="absolute bottom-4 left-1/2 -translate-x-1/2">
+                        <button 
+                          onClick={() => {
+                            set_exam_questions(new Array(40).fill({
+                              question: "Sample Question",
+                              options: ["A", "B", "C", "D"],
+                              correct_answer: 0,
+                              domain: "Remember",
+                              chapterTitle: "Introduction to CS"
+                            }));
+                            set_is_viewing_exam(true);
+                            // After a tiny delay, we can trigger the mock in ExamPlayer
+                            // but actually we can just pass the data through if we want.
+                            // For now, the user can click this then click the button in ExamPlayer.
+                            // OR I can make a more direct mock here.
+                          }}
+                          className="text-[10px] px-3 py-2 bg-white border border-dashed border-[var(--color-gray-300)] text-[var(--color-gray-400)] rounded-lg hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-all"
+                        >
+                          [Dev: Mock Data & Open Player]
+                        </button>
+                      </div>
                     </div>
                   </>
                 )}
@@ -870,6 +938,7 @@ export default function CoursePage() {
         <div className="w-full h-full overflow-hidden rounded-[24px] md:rounded-[32px] flex flex-col relative">
           <InlineAIChat
             courseName={course.name_en}
+            currentLesson={course.topics[currentChapterIdx]}
             initialTopic={course.topics_en ? course.topics_en[0] : course.topics[0]}
             externalPrompt={externalChatPrompt}
             onPromptProcessed={() => setExternalChatPrompt("")}

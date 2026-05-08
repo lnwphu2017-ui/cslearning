@@ -1,8 +1,13 @@
 import os
 import json
 import re
+import sys
 from dotenv import load_dotenv
 from supabase import create_client, Client
+
+# Set stdout to support UTF-8 for Windows console
+if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 # Load environment variables
 load_dotenv()

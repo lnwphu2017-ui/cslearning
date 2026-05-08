@@ -80,7 +80,7 @@ export function QuizPlayer({ questions, OnClose, userId, lessonId }: QuizPlayerP
   if (is_finished) {
     if (is_reviewing) {
       return (
-        <div className="h-full flex flex-col px-6 md:px-8 lg:px-12 py-4 animate-in fade-in zoom-in-95 duration-500 overflow-hidden">
+        <div className="h-full flex flex-col px-6 md:px-8 lg:px-12 py-4 overflow-hidden">
           <div className="flex items-center justify-between mb-4 shrink-0">
             <h2 className="text-xl font-bold text-[var(--color-black)]">Review Answers</h2>
             <button 
@@ -127,9 +127,9 @@ export function QuizPlayer({ questions, OnClose, userId, lessonId }: QuizPlayerP
                       let textColor = "text-[var(--color-gray-600)]";
 
                       if (isOptionCorrect) {
-                        bgColor = "bg-[var(--color-primary)]/10";
-                        borderColor = "border-[var(--color-primary)]";
-                        textColor = "text-[var(--color-primary)] font-bold";
+                        bgColor = "bg-[#8c8cf3]/10";
+                        borderColor = "border-[#8c8cf3]";
+                        textColor = "text-[#8c8cf3] font-bold";
                       } else if (isOptionSelected) {
                         borderColor = "border-[var(--color-gray-400)]";
                         textColor = "text-[var(--color-black)] font-medium line-through opacity-60";
@@ -138,9 +138,9 @@ export function QuizPlayer({ questions, OnClose, userId, lessonId }: QuizPlayerP
                       return (
                         <div 
                           key={oIdx} 
-                          className={`flex items-center gap-3 p-2.5 rounded-xl border-2 text-[13px] transition-all ${bgColor} ${borderColor} ${textColor}`}
+                          className={`flex items-center gap-3 p-2.5 rounded-lg border-2 text-[13px] transition-all ${bgColor} ${borderColor} ${textColor}`}
                         >
-                          <span className={`w-6 h-6 shrink-0 rounded-md border flex items-center justify-center text-[10px] font-bold ${isOptionCorrect ? 'bg-[var(--color-primary)] border-[var(--color-primary)] text-white' : 'border-[var(--color-gray-200)] text-gray-400'}`}>
+                          <span className={`w-6 h-6 shrink-0 rounded-md border flex items-center justify-center text-[10px] font-bold ${isOptionCorrect ? 'bg-[#8c8cf3] border-[#8c8cf3] text-white' : 'border-gray-200 text-gray-400'}`}>
                             {["A", "B", "C", "D"][oIdx]}
                           </span>
                           <span>{opt}</span>
@@ -148,10 +148,10 @@ export function QuizPlayer({ questions, OnClose, userId, lessonId }: QuizPlayerP
                       );
                     })}
 
-                    {/* แสดงคำอธิบายเฉพาะเมื่อตอบผิด */}
-                    {!isCorrectAnswer && q.explanation && (
-                      <div className="mt-2 p-3 bg-[var(--color-gray-50)] rounded-xl border-l-4 border-[var(--color-primary)]">
-                        <div className="text-[11px] font-bold text-[var(--color-primary)] uppercase tracking-wider mb-1">ทำไมถึงตอบ {correctLetter}?</div>
+                    {/* แสดงคำอธิบายสำหรับทุกข้อ */}
+                    {q.explanation && (
+                      <div className="mt-2 p-3 bg-gray-50 rounded-lg border-l-4 border-[#8c8cf3]">
+                        <div className="text-[11px] font-bold text-[#8c8cf3] uppercase tracking-wider mb-1">ทำไมถึงตอบข้อ {correctLetter}? (เหตุผล)</div>
                         <p className="text-[13px] text-[var(--color-gray-600)] italic leading-relaxed">{q.explanation}</p>
                       </div>
                     )}
@@ -165,7 +165,7 @@ export function QuizPlayer({ questions, OnClose, userId, lessonId }: QuizPlayerP
           <div className="pt-4 shrink-0 border-t border-[var(--color-gray-100)]">
              <button
               onClick={OnClose}
-              className="w-full py-4 bg-[var(--color-primary)] text-white rounded-2xl font-bold text-lg hover:brightness-110"
+              className="w-full py-4 bg-[#8c8cf3] text-white rounded-lg font-bold text-lg hover:brightness-110"
             >
               Back to Course
             </button>
@@ -175,12 +175,12 @@ export function QuizPlayer({ questions, OnClose, userId, lessonId }: QuizPlayerP
     }
 
     return (
-      <div className="h-full flex flex-col items-center justify-center pb-12 animate-in fade-in zoom-in-95 duration-500">
+      <div className="h-full flex flex-col items-center justify-center pb-12">
         <h2 className="text-3xl font-bold text-[var(--color-black)] mb-1">Quiz Completed!</h2>
         <p className="text-[var(--color-gray-500)] mb-6">You've finished the assessment</p>
         
-        <div className="bg-[var(--color-gray-50)] border-2 border-[var(--color-gray-200)] rounded-[32px] p-10 flex flex-col items-center mb-10 w-full max-w-sm">
-          <div className="text-6xl font-black text-[var(--color-primary)] mb-2">{score}/{questions.length}</div>
+        <div className="bg-gray-50 border-2 border-gray-200 rounded-lg p-10 flex flex-col items-center mb-10 w-full max-w-sm">
+          <div className="text-6xl font-black text-[#8c8cf3] mb-2">{score}/{questions.length}</div>
           <div className="text-sm font-bold text-[var(--color-gray-400)] uppercase tracking-widest">Your Score</div>
           {is_saving && <div className="text-xs text-[var(--color-gray-400)] mt-2">Saving your score...</div>}
         </div>
@@ -188,13 +188,13 @@ export function QuizPlayer({ questions, OnClose, userId, lessonId }: QuizPlayerP
         <div className="flex gap-4 w-full max-w-md px-6">
           <button
             onClick={OnClose}
-            className="flex-1 py-4 border-2 border-[var(--color-gray-200)] text-[var(--color-gray-600)] rounded-2xl font-bold text-lg hover:bg-[var(--color-gray-50)] transition-all"
+            className="flex-1 py-4 border-2 border-[var(--color-gray-200)] text-[var(--color-gray-600)] rounded-lg font-bold text-lg hover:bg-[var(--color-gray-50)] transition-all"
           >
             Back to Course
           </button>
           <button
             onClick={() => set_is_reviewing(true)}
-            className="flex-1 py-4 bg-[var(--color-primary)] text-white rounded-2xl font-bold text-lg hover:brightness-110 active:scale-95 transition-all shadow-lg"
+            className="flex-1 py-4 bg-[#8c8cf3] text-white rounded-lg font-bold text-lg hover:brightness-110 active:scale-95 transition-all"
           >
             Review Answers
           </button>
@@ -211,7 +211,7 @@ export function QuizPlayer({ questions, OnClose, userId, lessonId }: QuizPlayerP
       {/* Top Progress */}
       <div className="mb-4 shrink-0">
         <div className="flex items-center justify-between mb-3">
-          <div className="text-[13px] font-bold text-[var(--color-primary)]">
+          <div className="text-[13px] font-bold text-[#8c8cf3]">
             Question {current_idx + 1} <span className="text-[var(--color-gray-300)] font-normal">of {questions.length}</span>
           </div>
           <button onClick={OnClose} className="p-2 text-[var(--color-gray-400)] hover:text-black transition-colors">
@@ -221,8 +221,8 @@ export function QuizPlayer({ questions, OnClose, userId, lessonId }: QuizPlayerP
             </svg>
           </button>
         </div>
-        <div className="w-full h-1.5 bg-[var(--color-gray-100)] rounded-full overflow-hidden">
-          <div className="h-full bg-[var(--color-primary)] transition-all duration-500" style={{ width: `${progress}%` }} />
+        <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+          <div className="h-full bg-[#8c8cf3] transition-all duration-500" style={{ width: `${progress}%` }} />
         </div>
       </div>
 
@@ -246,23 +246,23 @@ export function QuizPlayer({ questions, OnClose, userId, lessonId }: QuizPlayerP
               const letters = ["A", "B", "C", "D"];
               const is_selected = selected_option === idx;
 
-              let border_color = "border-[var(--color-gray-200)]";
+              let border_color = "border-[#8c8cf3]/30";
               let bg_color = "bg-white";
-              let text_color = "text-[var(--color-gray-700)]";
-
+              let text_color = "text-[#262626]";
+ 
               if (is_selected) {
-                border_color = "border-[var(--color-primary)]";
-                bg_color = "bg-[var(--color-primary)]/10";
-                text_color = "text-[var(--color-black)]";
+                border_color = "border-[#8c8cf3]";
+                bg_color = "bg-[#8c8cf3]";
+                text_color = "text-white";
               }
 
               return (
                 <button
                   key={idx}
                   onClick={() => HandleOptionClick(idx)}
-                  className={`w-full flex items-center gap-5 p-5 md:p-6 rounded-xl border-2 transition-all text-left group ${border_color} ${bg_color} ${selected_option === null ? "hover:border-[var(--color-primary)] hover:bg-[var(--color-primary)]/5" : ""}`}
+                  className={`w-full flex items-center gap-5 p-5 md:p-6 rounded-lg border-2 transition-all text-left group ${border_color} ${bg_color} ${selected_option === null ? "hover:border-[#8c8cf3] hover:brightness-110" : ""}`}
                 >
-                  <div className={`w-12 h-12 rounded-xl border-2 flex items-center justify-center shrink-0 text-xl font-bold transition-all ${is_selected ? "bg-[var(--color-primary)] border-[var(--color-primary)] text-white" : "border-[var(--color-gray-200)] text-[var(--color-gray-400)] group-hover:border-[var(--color-primary)] group-hover:text-[var(--color-primary)]"}`}>
+                  <div className={`w-12 h-12 rounded-lg border-2 flex items-center justify-center shrink-0 text-xl font-bold transition-all ${is_selected ? "bg-white border-white text-[#8c8cf3]" : "bg-white border-[#8c8cf3]/30 text-[#8c8cf3] group-hover:border-[#8c8cf3]"}`}>
                     {letters[idx]}
                   </div>
                   <span className={`text-lg md:text-xl font-medium leading-snug ${text_color}`}>{option}</span>
@@ -278,9 +278,9 @@ export function QuizPlayer({ questions, OnClose, userId, lessonId }: QuizPlayerP
         <button
           onClick={HandleNext}
           disabled={selected_option === null}
-          className={`px-8 py-3 rounded-2xl font-bold text-sm transition-all ${selected_option === null 
-            ? "bg-[var(--color-gray-100)] text-[var(--color-gray-400)] cursor-not-allowed" 
-            : "bg-[var(--color-primary)] text-white hover:brightness-110 active:scale-95"}`}
+          className={`px-8 py-3 rounded-lg font-bold text-sm transition-all ${selected_option === null 
+            ? "bg-gray-100 text-gray-400 cursor-not-allowed" 
+            : "bg-[#8c8cf3] text-white hover:brightness-110 active:scale-95"}`}
         >
           {current_idx === questions.length - 1 ? "Finish Quiz" : "Next Question"}
         </button>

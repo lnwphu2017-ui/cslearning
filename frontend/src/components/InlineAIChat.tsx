@@ -7,11 +7,12 @@ import { TypewriterEffect } from "./TypewriterEffect";
 interface InlineAIChatProps {
   courseName: string;
   initialTopic?: string;
+  currentLesson?: string;
   externalPrompt?: string;
   onPromptProcessed?: () => void;
 }
 
-export function InlineAIChat({ courseName, initialTopic, externalPrompt, onPromptProcessed }: InlineAIChatProps) {
+export function InlineAIChat({ courseName, currentLesson, initialTopic, externalPrompt, onPromptProcessed }: InlineAIChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([{
     role: 'assistant',
     content: `สวัสดีครับ! มีข้อสงสัยไหนในวิชา **${courseName}** ที่อยากให้ผมช่วยอธิบายเพิ่มเติมไหมครับ?`,
@@ -20,9 +21,18 @@ export function InlineAIChat({ courseName, initialTopic, externalPrompt, onPromp
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const handleStopGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+      setIsLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -56,7 +66,7 @@ export function InlineAIChat({ courseName, initialTopic, externalPrompt, onPromp
     // To provide context to the AI, we can inject a system prompt or just rely on the user's flow.
     const systemMessage: ChatMessage = { 
       role: 'system', 
-      content: `คุณคือติวเตอร์วิชา ${courseName} จงตอบคำถามอย่างกระชับที่สุด ตรงประเด็น ไม่ต้องเกริ่นนำ และประหยัด Token` 
+      content: `คุณคือติวเตอร์วิชา ${courseName} ขณะนี้ผู้ใช้กำลังศึกษาบทเรียนเรื่อง: "${currentLesson}" ดังนั้นจงตอบคำถามโดยอ้างอิงเนื้อหาจากบทเรียนนี้เป็นหลัก และให้ระบุชื่อบทเรียนที่กำลังอ้างอิงถึงไว้ในคำตอบอย่างชัดเจนเสมอ ตอบอย่างกระชับ ตรงประเด็น ไม่ต้องเกริ่นนำ ประหยัด Token และใช้ Markdown ในการจัดรูปแบบเท่านั้น (ห้ามใช้ HTML tags เช่น <br> โดยเด็ดขาด)` 
     };
 
     let actualInput = input.trim();
@@ -70,6 +80,8 @@ export function InlineAIChat({ courseName, initialTopic, externalPrompt, onPromp
     
     setInput("");
     setIsLoading(true);
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     try {
       await apiService.streamChatMessage(newMessages, (chunk) => {
@@ -82,8 +94,12 @@ export function InlineAIChat({ courseName, initialTopic, externalPrompt, onPromp
           };
           return updated;
         });
-      });
-    } catch (error) {
+      }, undefined, controller.signal, currentLesson);
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        console.log('Generation stopped by user');
+        return;
+      }
       console.error(error);
       setMessages(prev => {
         const updated = [...prev];
@@ -127,12 +143,20 @@ export function InlineAIChat({ courseName, initialTopic, externalPrompt, onPromp
                   ? msg.content.replace(/\[Context:.*?\]\s*/, "") 
                   : (
                     <div className="flex gap-4 items-start">
-                      <div className="w-9 h-9 flex items-center justify-center shrink-0 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 shadow-[0_4px_12px_rgba(0,0,0,0.1)] mt-0.5">
-                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                          <path d="M12 3C12 7.97056 7.97056 12 3 12C7.97056 12 12 16.0294 12 21C12 16.0294 16.0294 12 21 12C16.0294 12 12 7.97056 12 3Z" fill="white" />
-                        </svg>
+                      <div className="w-9 h-9 flex items-center justify-center shrink-0 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 shadow-[0_4px_12px_rgba(0,0,0,0.1)] mt-0.5 overflow-hidden">
+                        <div className="circle-loader">
+                          <div className="circle circle1"></div>
+                          <div className="circle circle2"></div>
+                          <div className="circle circle3"></div>
+                          <div className="circle circle4"></div>
+                          <div className="circle circle5"></div>
+                          <div className="circle circle6"></div>
+                          <div className="circle circle7"></div>
+                          <div className="circle circle8"></div>
+                          <div className="circle circle9"></div>
+                        </div>
                       </div>
-                      <div className="assistant-message-dark pt-1 flex-1 pr-0 sm:pr-[52px]">
+                      <div className="assistant-message-dark pt-2 flex-1 pr-0 sm:pr-[52px]">
                         <TypewriterEffect text={msg.content} animate={msg.animate} />
                       </div>
                     </div>
@@ -143,11 +167,22 @@ export function InlineAIChat({ courseName, initialTopic, externalPrompt, onPromp
         })}
         {/* Show generic loading animation only if the last message is assistant and content is still empty (waiting for first byte) */}
         {isLoading && messages[messages.length - 1]?.role === 'assistant' && !messages[messages.length - 1]?.content && (
-          <div className="flex justify-start animate-fade-in-up py-4">
-            <div className="w-full flex items-center gap-2">
-              <span className="w-1.5 h-1.5 bg-white/60 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
-              <span className="w-1.5 h-1.5 bg-white/60 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
-              <span className="w-1.5 h-1.5 bg-white/60 rounded-full animate-bounce"></span>
+          <div className="flex justify-start animate-fade-in-up py-2">
+            <div className="flex gap-4 items-center">
+              <div className="w-9 h-9 flex items-center justify-center shrink-0 rounded-full bg-white/5 backdrop-blur-sm border border-white/10 overflow-hidden">
+                <div className="circle-loader is-thinking scale-75">
+                  <div className="circle circle1"></div>
+                  <div className="circle circle2"></div>
+                  <div className="circle circle3"></div>
+                  <div className="circle circle4"></div>
+                  <div className="circle circle5"></div>
+                  <div className="circle circle6"></div>
+                  <div className="circle circle7"></div>
+                  <div className="circle circle8"></div>
+                  <div className="circle circle9"></div>
+                </div>
+              </div>
+              <span className="text-[12px] text-white/40 font-medium tracking-wide">Thinking....</span>
             </div>
           </div>
         )}
@@ -177,16 +212,17 @@ export function InlineAIChat({ courseName, initialTopic, externalPrompt, onPromp
           
           <div className="flex items-center pr-1 pb-0.5">
             <button 
-              type="submit"
-              disabled={!input.trim() || isLoading}
+              type={isLoading ? "button" : "submit"}
+              onClick={isLoading ? handleStopGeneration : undefined}
+              disabled={!input.trim() && !isLoading}
               className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 ${
-                input.trim() && !isLoading 
+                (input.trim() || isLoading)
                 ? 'bg-[var(--color-primary)] text-white hover:scale-105 shadow-sm' 
                 : 'bg-transparent text-[var(--color-gray-300)]'
               }`}
             >
               {isLoading ? (
-                <div className="w-4 h-4 border-2 border-[var(--color-primary)]/30 border-t-[var(--color-primary)] rounded-full animate-spin" />
+                <div className="w-4 h-4 bg-white rounded-sm animate-pulse" title="Stop generation" />
               ) : (
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={input.trim() ? "mr-0.5 mt-0.5" : ""}>
                   <line x1="22" y1="2" x2="11" y2="13"></line>

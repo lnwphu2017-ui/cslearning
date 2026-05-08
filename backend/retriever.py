@@ -4,10 +4,21 @@ import re
 import sys
 from typing import List, Dict, Any
 from supabase_client import supabase  # Import existing client
+from langchain_openai import OpenAIEmbeddings
 
 # ตั้งค่า stdout ให้รองรับ UTF-8 สำหรับ Windows console
 if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
+# Initialize Embeddings (matching ingest_lessons.py)
+api_key = os.environ.get("OPENROUTER_API_KEY")
+embedding_model = os.environ.get("OPENROUTER_EMBEDDING_MODEL", "nvidia/llama-nemotron-embed-vl-1b-v2:free")
+
+embeddings = OpenAIEmbeddings(
+    model=embedding_model,
+    openai_api_key=api_key,
+    openai_api_base="https://openrouter.ai/api/v1"
+)
 
 _syllabus_text = None
 _subject_sections = None
@@ -48,27 +59,63 @@ def get_full_syllabus() -> str:
     _load_syllabus()
     return _syllabus_text
 
-async def search_lessons_database(query: str, limit: int = 3) -> str:
+async def search_lessons_vector(query: str, limit: int = 5, course_slug: str = None) -> str:
     """
-    Search for relevant lesson content in Supabase.
-    This provides rich details from the actual teaching materials.
+    Search for relevant lesson content in Supabase using Vector Similarity Search.
+    Uses the match_lesson_chunks RPC function.
     """
     try:
-        # Step 1: Clean query for better matching
+        if not query.strip():
+            return ""
+
+        # 1. Generate embedding for the query
+        query_embedding = await embeddings.aembed_query(query)
+
+        # 2. Call Supabase RPC for similarity search
+        rpc_params = {
+            "query_embedding": query_embedding,
+            "match_threshold": 0.5, # ปรับจูนตามความเหมาะสม
+            "match_count": limit,
+        }
+        
+        if course_slug:
+            rpc_params["filter_course_slug"] = course_slug
+
+        res = supabase.rpc('match_lesson_chunks', rpc_params).execute()
+
+        if not res.data:
+            print(f"No vector matches found for: {query[:30]}...")
+            return ""
+
+        # 3. Format results for the LLM
+        formatted_context = "=== ข้อมูลเนื้อหาบทเรียนที่เกี่ยวข้อง (Vector Search Results) ===\n"
+        for item in res.data:
+            similarity = item.get('similarity', 0)
+            formatted_context += f"บทเรียน: {item['chapter_title']} (วิชา: {item['course_slug']}) [ความเกี่ยวข้อง: {similarity:.2f}]\n"
+            formatted_context += f"เนื้อหา: {item['content']}\n"
+            formatted_context += "---\n"
+        
+        return formatted_context
+
+    except Exception as e:
+        print(f"Error in vector database search: {e}")
+        # Fallback to legacy keyword search if vector search fails (e.g. RPC not created yet)
+        return await search_lessons_database_legacy(query, limit=3)
+
+async def search_lessons_database_legacy(query: str, limit: int = 3) -> str:
+    """
+    Legacy keyword search (Fallback).
+    """
+    try:
         query_clean = query.strip()
         if len(query_clean) < 2:
             return ""
 
-        # Step 2: Search in database (Title match first, then Content)
-        # Using .ilike() for simple keyword search since we don't have embeddings yet
-        # We search for lessons where title OR content contains the query
-        
         # Search Title
         res_title = supabase.table('lessons').select('title, content, course_slug')\
             .ilike('title', f'%{query_clean}%')\
             .limit(limit).execute()
         
-        # Search Content if not enough title matches
         res_content = []
         if len(res_title.data) < limit:
             res_content = supabase.table('lessons').select('title, content, course_slug')\
@@ -83,56 +130,61 @@ async def search_lessons_database(query: str, limit: int = 3) -> str:
         if not combined_results:
             return ""
 
-        # Format results for the LLM
-        formatted_context = "=== ข้อมูลเนื้อหาบทเรียนที่เกี่ยวข้อง (Lesson Content) ===\n"
+        formatted_context = "=== ข้อมูลเนื้อหาบทเรียนที่เกี่ยวข้อง (Legacy Search) ===\n"
         for i, item in enumerate(combined_results):
             formatted_context += f"บทเรียน: {item['title']} (รหัสวิชา: {item['course_slug']})\n"
-            # Limit content size per lesson to save tokens
             content_snippet = item['content'][:1500] + ("..." if len(item['content']) > 1500 else "")
             formatted_context += f"เนื้อหา: {content_snippet}\n"
             formatted_context += "---\n"
         
         return formatted_context
     except Exception as e:
-        print(f"Error in database search: {e}")
+        print(f"Error in legacy database search: {e}")
         return ""
 
-async def get_subject_section(query: str) -> str:
+async def get_subject_section(query: str, course_slug: str = None, lesson_focus: str = None) -> str:
     """
-    Enhanced retrieval combining Syllabus context and Database content.
+    Enhanced retrieval combining Vector Search, Syllabus context, and current lesson focus.
     """
     _load_syllabus()
+    
+    final_context = ""
+    
+    # 1. ALWAYS include the current lesson's content if specified (The primary context)
+    if lesson_focus:
+        # Search in subject_sections (Syllabus)
+        focus_lower = lesson_focus.lower()
+        focus_content = ""
+        for header, content in _subject_sections.items():
+            if focus_lower in header.lower():
+                focus_content = content
+                break
+        
+        if focus_content:
+            final_context += f"=== เนื้อหาของบทเรียนปัจจุบันที่ผู้ใช้กำลังเปิดดู (PRIMARY CONTEXT) ===\n"
+            final_context += f"บทเรียน: {lesson_focus}\n"
+            final_context += f"{focus_content}\n\n"
 
-    # 1. Get database context (Rich details)
-    db_context = await search_lessons_database(query)
+    # 2. Get vector context (Rich details from chunks for the specific query)
+    db_context = await search_lessons_vector(query, course_slug=course_slug)
+    if db_context:
+        final_context += db_context + "\n"
 
-    # 2. Get syllabus context (Structural information)
+    # 3. Get syllabus context (Structural information matching the query)
     query_lower = query.lower()
     matched_sections = []
 
     for header, content in _subject_sections.items():
+        # Avoid duplicating the focus content
+        if lesson_focus and lesson_focus.lower() in header.lower():
+            continue
         if query_lower in header.lower() or query_lower in content.lower():
             matched_sections.append(content)
 
-    # Partial matching for syllabus if needed
-    if not matched_sections:
-        query_words = [w for w in query_lower.split() if len(w) > 2]
-        for header, content in _subject_sections.items():
-            header_lower = header.lower()
-            content_lower = content.lower()
-            match_count = sum(1 for word in query_words if word in header_lower or word in content_lower)
-            if match_count >= max(1, len(query_words) // 2):
-                matched_sections.append(content)
-
-    syllabus_context = "\n\n".join(matched_sections) if matched_sections else ""
+    if matched_sections:
+        final_context += "=== ข้อมูลโครงสร้างหลักสูตรและบทเรียนอื่นที่เกี่ยวข้อง (Syllabus) ===\n"
+        final_context += "\n\n".join(matched_sections)
     
-    # Final combined context
-    final_context = ""
-    if db_context:
-        final_context += db_context + "\n"
-    if syllabus_context:
-        final_context += "=== ข้อมูลโครงสร้างหลักสูตร (Syllabus) ===\n" + syllabus_context
-
     return final_context or _syllabus_text
 
 def get_retriever():
@@ -141,5 +193,6 @@ def get_retriever():
         async def ainvoke(self, query: str):
             from langchain_core.documents import Document
             section_text = await get_subject_section(query)
-            return [Document(page_content=section_text, metadata={"source": "database + syllabus"})]
+            return [Document(page_content=section_text, metadata={"source": "vector_database + syllabus"})]
     return SimpleSyllabusRetriever()
+
