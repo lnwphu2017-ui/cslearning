@@ -42,16 +42,25 @@ export const apiService = {
       const reader = res.body.getReader();
       const decoder = new TextDecoder('utf-8');
       
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        
-        const chunk = decoder.decode(value, { stream: true });
-        if (chunk) {
-          onChunk(chunk);
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          const chunk = decoder.decode(value, { stream: true });
+          if (chunk) {
+            onChunk(chunk);
+          }
         }
+      } catch (error: any) {
+        if (error.name === 'AbortError') {
+          console.log('Stream aborted');
+          return;
+        }
+        throw error;
       }
-    } catch (error) {
+    } catch (error: any) {
+      if (error.name === 'AbortError') return;
       console.error('Error in streamChatMessage:', error);
       throw error;
     }

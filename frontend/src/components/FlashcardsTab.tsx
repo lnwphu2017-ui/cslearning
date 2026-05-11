@@ -38,7 +38,7 @@ export function FlashcardsTab({ topics, selected_topics, OnToggle, OnGenerate }:
             className={`
               w-full flex items-center justify-between p-4 md:p-5 rounded-2xl border transition-all duration-300 bg-[var(--color-white)]
               ${is_open 
-                ? "border-[var(--color-gray-300)] shadow-[0_4px_20px_rgba(0,0,0,0.05)]" 
+                ? "border-[var(--color-gray-300)]" 
                 : "border-[var(--color-gray-200)] hover:border-[var(--color-gray-300)]"
               }
             `}
@@ -62,7 +62,7 @@ export function FlashcardsTab({ topics, selected_topics, OnToggle, OnGenerate }:
               {/* Backdrop to close */}
               <div className="fixed inset-0 z-20" onClick={() => set_is_open(false)} />
               
-              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-[var(--color-gray-200)]/30 rounded-2xl shadow-[0_40px_100px_rgba(0,0,0,0.1)] overflow-hidden z-30 animate-in fade-in zoom-in-95 duration-200 origin-top">
+              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-[var(--color-gray-200)] rounded-2xl overflow-hidden z-30 animate-in fade-in zoom-in-95 duration-200 origin-top">
                 <div className="p-4 relative">
                   {/* Masking boxes to cover potential scrollbar arrows */}
                   <div className="absolute top-0 right-0 w-8 h-6 bg-white z-10" />
@@ -71,31 +71,49 @@ export function FlashcardsTab({ topics, selected_topics, OnToggle, OnGenerate }:
                   <div className="max-h-[320px] overflow-y-auto premium-scrollbar pr-2 relative z-0">
                     {topics.map((topic, idx) => {
                       const is_selected = selected_topics.includes(topic);
+                      // ตรวจสอบสถานะเรียนจบจาก Session Storage
+                      const is_completed = typeof window !== "undefined" && sessionStorage.getItem(`completed_${topic}`) === 'true';
+                      
                       return (
                         <button
                           key={idx}
+                          disabled={!is_completed}
                           onClick={() => {
-                            OnToggle(topic);
-                            set_is_open(false);
+                            if (is_completed) {
+                              OnToggle(topic);
+                              set_is_open(false);
+                            }
                           }}
                           className={`
-                            w-full flex items-center gap-4 px-5 py-4 rounded-xl transition-all mb-1
-                            ${is_selected ? "bg-[var(--color-primary)]/10" : "hover:bg-[var(--color-gray-50)]"}
+                            w-full flex items-center gap-4 px-5 py-4 rounded-xl transition-all mb-1 group
+                            ${is_selected ? "bg-[var(--color-primary)]/10" : is_completed ? "hover:bg-[var(--color-gray-50)]" : "opacity-50 cursor-not-allowed"}
                           `}
                         >
                           <div className={`
                             w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all duration-300 text-[11px] font-bold
                             ${is_selected 
                               ? "bg-[var(--color-primary)] border-[var(--color-primary)] text-white shadow-[0_0_15px_rgba(177,178,255,0.4)]" 
-                              : "bg-white border-[var(--color-gray-200)] text-[var(--color-gray-400)] group-hover:border-[var(--color-gray-300)]"
+                              : is_completed
+                                ? "bg-white border-[var(--color-gray-200)] text-[var(--color-gray-400)] group-hover:border-[var(--color-gray-300)]"
+                                : "bg-[var(--color-gray-100)] border-[var(--color-gray-200)] text-[var(--color-gray-300)]"
                             }
                           `}>
-                            {idx + 1}
+                            {!is_completed ? (
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                              </svg>
+                            ) : idx + 1}
                           </div>
                           
-                          <span className={`text-sm md:text-base transition-colors ${is_selected ? "text-[var(--color-black)]" : "text-[var(--color-gray-600)]"}`}>
-                            {topic}
-                          </span>
+                          <div className="flex flex-col items-start text-left">
+                            <span className={`text-sm md:text-base transition-colors ${is_selected ? "text-[var(--color-black)]" : is_completed ? "text-[var(--color-gray-600)]" : "text-[var(--color-gray-400)]"}`}>
+                              {topic}
+                            </span>
+                            {!is_completed && (
+                              <span className="text-[10px] text-[var(--color-gray-400)] uppercase tracking-wider font-bold">Please complete this chapter first</span>
+                            )}
+                          </div>
                         </button>
                       );
                     })}
@@ -115,7 +133,7 @@ export function FlashcardsTab({ topics, selected_topics, OnToggle, OnGenerate }:
           className={`
             w-full py-4 md:py-5 rounded-2xl font-bold text-lg md:text-xl transition-all duration-300
             ${selected_topic
-              ? "bg-[#8c8cf3] text-white hover:brightness-110 hover:scale-[1.01] active:scale-95 cursor-pointer"
+              ? "bg-[#8c8cf3] text-white hover:brightness-110 active:scale-95 cursor-pointer"
               : "bg-[var(--color-gray-200)] text-[var(--color-gray-400)] cursor-not-allowed opacity-50"
             }
           `}

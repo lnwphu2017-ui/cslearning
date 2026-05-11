@@ -156,7 +156,8 @@ async def get_subject_section(query: str, course_slug: str = None, lesson_focus:
         focus_lower = lesson_focus.lower()
         focus_content = ""
         for header, content in _subject_sections.items():
-            if focus_lower in header.lower():
+            # Check if focus lesson is mentioned in header OR in the detailed content list
+            if focus_lower in header.lower() or focus_lower in content.lower():
                 focus_content = content
                 break
         
