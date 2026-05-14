@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { onAuthStateChanged, signInWithRedirect, getRedirectResult, signOut, User } from "firebase/auth";
+import { onAuthStateChanged, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, User } from "firebase/auth";
 import { auth, googleProvider } from "@/lib/firebase";
 
 // --- Types ---
@@ -37,7 +37,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => unsubscribe();
   }, []);
 
-  // ตรวจสอบผลลัพธ์ redirect หลัง Google Login กลับมา
+  // ตรวจสอบผลลัพธ์ redirect หลัง Google Login กลับมา (fallback)
   useEffect(() => {
     getRedirectResult(auth)
       .then((result) => {
@@ -52,10 +52,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const loginWithGoogle = async () => {
     try {
-      // ใช้ Redirect แทน Popup เพื่อรองรับ production deployment
-      await signInWithRedirect(auth, googleProvider);
-    } catch (error) {
-      console.error("Google login error:", error);
+      // ลอง Popup ก่อน — ถ้าถูก block จะ fallback เป็น Redirect
+      const result = await signInWithPopup(auth, googleProvider);
+      if (result?.user) {
+        setIsModalOpen(false);
+      }
+    } catch (error: unknown) {
+      const firebase_error = error as { code?: string };
+      console.error("Google login error:", firebase_error.code, error);
+      // ถ้า popup ถูก block → ใช้ redirect แทน
+      if (firebase_error.code === "auth/popup-blocked" || firebase_error.code === "auth/popup-closed-by-user") {
+        try {
+          await signInWithRedirect(auth, googleProvider);
+        } catch (redirect_error) {
+          console.error("Redirect login error:", redirect_error);
+        }
+      }
     }
   };
 
