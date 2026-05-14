@@ -22,8 +22,8 @@ export function ExamTab({ course_name, OnGenerate }: ExamTabProps) {
         Full Course Examination
       </h2>
       <p className="text-[var(--color-gray-500)] text-center mb-10 max-w-md">
-        This exam covers all topics in <span className="text-[#8c8cf3] font-bold">{course_name}</span>. 
-        It contains 30 multiple-choice questions designed to test your overall understanding.
+        This exam covers all topics in <span className="text-[#8c8cf3] font-bold">{course_name}</span>.
+        It contains 40 multiple-choice questions designed to test your overall understanding.
       </p>
 
       <button

@@ -31,6 +31,31 @@ load_dotenv()
 
 app = FastAPI()
 
+# --- Token Quota Management ---
+QUOTA_FILE = os.path.join(os.path.dirname(__file__), "data", "user_quotas.json")
+DEFAULT_MAX_TOKENS = 100000 # 100k tokens limit
+
+def get_all_quotas():
+    if not os.path.exists(QUOTA_FILE):
+        return {}
+    try:
+        with open(QUOTA_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except:
+        return {}
+
+def update_user_quota(user_id: str, tokens_used: int):
+    quotas = get_all_quotas()
+    user_data = quotas.get(user_id, {"used": 0, "limit": DEFAULT_MAX_TOKENS})
+    user_data["used"] += tokens_used
+    quotas[user_id] = user_data
+    
+    # Ensure directory exists
+    os.makedirs(os.path.dirname(QUOTA_FILE), exist_ok=True)
+    with open(QUOTA_FILE, "w", encoding="utf-8") as f:
+        json.dump(quotas, f, ensure_ascii=False, indent=2)
+    return user_data
+
 # Middleware
 app.add_middleware(
     CORSMiddleware,
@@ -276,6 +301,14 @@ async def chat(request: ChatRequest):
         
         last_message = result["messages"][-1]
         
+        # Extract token usage and update quota
+        tokens_used = 0
+        if hasattr(last_message, "response_metadata"):
+            tokens_used = last_message.response_metadata.get("token_usage", {}).get("total_tokens", 0)
+        
+        if tokens_used > 0:
+            update_user_quota(current_user_id, tokens_used)
+
         # Save to Supabase
         current_user_id = request.userId or 'anonymous'
         user_msg = request.messages[-1].content
@@ -318,6 +351,13 @@ async def chat_stream(request: ChatRequest):
                     if chunk and isinstance(chunk, str):
                         full_response += chunk
                         yield chunk
+                elif event["event"] == "on_chat_model_end":
+                    usage = event["data"]["output"].response_metadata.get("token_usage", {})
+                    tokens_used = usage.get("total_tokens", 0)
+                    if tokens_used > 0:
+                        user_quota = update_user_quota(current_user_id, tokens_used)
+                        # ส่งข้อมูล usage ไปที่ frontend แบบเงียบๆ (ใช้ delimiter)
+                        yield f"\n__USAGE__:{json.dumps(user_quota)}"
             
             # Save to Supabase after stream finished
             try:
@@ -604,6 +644,12 @@ async def generate_pdf(request: PDFGenerateRequest):
         print("PDF Generation Error:", e)
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/user-quota/{userId}")
+async def get_user_quota(userId: str):
+    quotas = get_all_quotas()
+    user_data = quotas.get(userId, {"used": 0, "limit": DEFAULT_MAX_TOKENS})
+    return user_data
 
 # --- SUPABASE ROUTES ---
 

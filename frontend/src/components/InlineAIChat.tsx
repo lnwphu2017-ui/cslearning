@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { apiService, ChatMessage } from "@/services/api";
 import { TypewriterEffect } from "./TypewriterEffect";
+import { useAuth } from "@/contexts/AuthContext";
 
 /* ===== ค่าคงที่สำหรับ Quick Prompt Chips ===== */
 const QUICK_PROMPTS = [
@@ -65,6 +66,9 @@ export function InlineAIChat({ courseName, currentLesson, initialTopic, external
   const [messages, setMessages] = useState<ChatMessage[]>([CreateWelcomeMessage()]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [quota, setQuota] = useState({ used: 0, limit: 100000 });
+  const { user } = useAuth();
+  const current_user_id = (user as any)?.uid || 'anonymous';
 
   /* #2 — Scroll to Bottom: ตรวจสอบว่าผู้ใช้ scroll ขึ้นไปหรือไม่ */
   const [is_at_bottom, set_is_at_bottom] = useState(true);
@@ -109,6 +113,15 @@ export function InlineAIChat({ courseName, currentLesson, initialTopic, external
     container.addEventListener('scroll', HandleScroll, { passive: true });
     return () => container.removeEventListener('scroll', HandleScroll);
   }, []);
+  
+  /* Load Quota on mount */
+  useEffect(() => {
+    const fetchQuota = async () => {
+      const data = await apiService.getUserQuota(current_user_id);
+      setQuota(data);
+    };
+    fetchQuota();
+  }, [current_user_id]);
 
   /* Handle external prompts (e.g. from clicking keywords) */
   useEffect(() => {
@@ -150,6 +163,18 @@ export function InlineAIChat({ courseName, currentLesson, initialTopic, external
 
     try {
       await apiService.streamChatMessage(newMessages, (chunk) => {
+        // ตรวจสอบ metadata ท้าย stream
+        if (chunk.includes("__USAGE__:")) {
+          try {
+            const usageStr = chunk.split("__USAGE__:")[1];
+            const usageData = JSON.parse(usageStr);
+            setQuota(usageData);
+          } catch (e) {
+            console.error("Failed to parse usage", e);
+          }
+          return; // ไม่ต้องนำไปแสดงในเนื้อหาข้อความ
+        }
+
         setMessages(prev => {
           const updated = [...prev];
           const lastIndex = updated.length - 1;
@@ -159,7 +184,7 @@ export function InlineAIChat({ courseName, currentLesson, initialTopic, external
           };
           return updated;
         });
-      }, undefined, controller.signal, currentLesson);
+      }, current_user_id, controller.signal, currentLesson);
     } catch (error: any) {
       if (error.name === 'AbortError') {
         console.log('Generation stopped by user');
@@ -237,13 +262,25 @@ export function InlineAIChat({ courseName, currentLesson, initialTopic, external
         
         const api_messages: ChatMessage[] = [systemMessage, ...display];
         apiService.streamChatMessage(api_messages, (chunk) => {
+          // ตรวจสอบ metadata ท้าย stream
+          if (chunk.includes("__USAGE__:")) {
+            try {
+              const usageStr = chunk.split("__USAGE__:")[1];
+              const usageData = JSON.parse(usageStr);
+              setQuota(usageData);
+            } catch (e) {
+              console.error("Failed to parse usage", e);
+            }
+            return;
+          }
+
           setMessages(p => {
             const u = [...p];
             const li = u.length - 1;
             u[li] = { ...u[li], content: u[li].content + chunk };
             return u;
           });
-        }, undefined, controller.signal, currentLesson)
+        }, current_user_id, controller.signal, currentLesson)
         .catch((error: any) => {
           if (error.name !== 'AbortError') {
             setMessages(p => {
@@ -267,11 +304,27 @@ export function InlineAIChat({ courseName, currentLesson, initialTopic, external
   return (
     <div className="flex flex-col h-full bg-[var(--color-primary-dark)] rounded-3xl overflow-hidden border border-white/20">
       {/* Header — พร้อมปุ่ม Clear Chat (#3) */}
-      <div className="h-[73px] border-b border-white/10 flex items-center justify-between px-6 shrink-0 bg-white/5">
+      <div className="h-[73px] border-b border-white/10 flex items-center justify-between px-6 shrink-0 bg-white/5 relative">
         {/* Spacer ซ้าย */}
         <div className="w-9" />
 
         <h2 className="text-lg font-bold tracking-tight text-white">CHATBOT</h2>
+        
+        {/* Token Usage Percentage */}
+        <div className="absolute right-[70px] top-[26px] flex flex-col items-end">
+          <span className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-0.5">Quota</span>
+          <div className="flex items-center gap-2">
+            <div className="w-16 h-1.5 bg-white/10 rounded-full overflow-hidden hidden sm:block">
+              <div 
+                className="h-full bg-[var(--color-primary)] transition-all duration-1000" 
+                style={{ width: `${Math.max(0, Math.floor(((quota.limit - quota.used) / quota.limit) * 100))}%` }}
+              />
+            </div>
+            <span className="text-[13px] font-black text-white tabular-nums">
+              {Math.max(0, Math.floor(((quota.limit - quota.used) / quota.limit) * 100))}%
+            </span>
+          </div>
+        </div>
 
         {/* #3 — ปุ่ม Clear Chat */}
         <button

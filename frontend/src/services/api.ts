@@ -243,5 +243,17 @@ export const apiService = {
       console.error('Error in generatePdf:', error);
       throw error;
     }
+  },
+  
+  // 11. Token Quota
+  async getUserQuota(userId: string) {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/user-quota/${userId}`);
+      if (!res.ok) throw new Error('Failed to fetch user quota');
+      return await res.json();
+    } catch (error) {
+      console.error('Error in getUserQuota:', error);
+      return { used: 0, limit: 100000 };
+    }
   }
 };
