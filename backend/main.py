@@ -381,16 +381,21 @@ async def generate_quiz(request: GenerateRequest):
     try:
         print(f"--- กำลังสร้าง QUIZ สำหรับ: {request.chapterTitle} ---")
         
-        # ใช้ Vector Search ดึง Context ที่ละเอียดขึ้นจาก chunks
-        context = await search_lessons_vector(request.chapterTitle, limit=10)
+        # ใช้เนื้อหาเต็ม (request.content) เป็นหลักเพื่อให้อ่านครบทุกหัวข้อย่อย
+        context = request.content
         
-        # หากไม่พบใน Vector Store ให้ลองใช้ syllabus/legacy search
-        if not context:
-            context = request.content if request.content else await get_subject_section(request.chapterTitle)
+        # หากไม่มีเนื้อหาส่งมา ให้ใช้ Vector Search ดึง Context ที่ละเอียดขึ้นจาก chunks
+        if not context or len(context.strip()) < 50:
+            context = await search_lessons_vector(request.chapterTitle, limit=10)
+            if not context:
+                context = await get_subject_section(request.chapterTitle)
 
         prompt = f"""You are an expert Computer Science examiner. 
 Create a 10-question multiple-choice quiz about the following topic: {request.chapterTitle}.
-Use ONLY the provided lesson content context to generate questions. Ensure accuracy based strictly on this content. Do not use general knowledge.
+CRITICAL RULE 1: You MUST ONLY use the provided Context. DO NOT use any outside knowledge.
+CRITICAL RULE 2: You MUST distribute the 10 questions evenly across ALL the subtopics (dropdown headers) provided in the context. Do not focus on just one subtopic.
+CRITICAL RULE 3: Every question and option MUST be written in complete grammatical sentences (Subject + Verb + Object) to ensure clarity. Do not use confusing short phrases.
+
 Each question must have exactly 4 options.
 Each question must be classified into one of Bloom's Taxonomy domains: Remember, Understand, Apply, Analyze, Evaluate, Create.
 Try to distribute questions across different domains.
@@ -428,19 +433,23 @@ async def generate_flashcards(request: GenerateRequest):
     try:
         print(f"--- กำลังสร้าง FLASHCARDS สำหรับ: {request.chapterTitle} ---")
         
-        # ใช้ Vector Search เพื่อให้ได้เนื้อหาที่ตรงจุดที่สุดสำหรับ Flashcards
-        context = await search_lessons_vector(request.chapterTitle, limit=10)
+        # ใช้เนื้อหาเต็มเพื่อกระจายหัวข้อ
+        context = request.content
         
-        if not context:
-            context = request.content if request.content else await get_subject_section(request.chapterTitle)
+        if not context or len(context.strip()) < 50:
+            context = await search_lessons_vector(request.chapterTitle, limit=10)
+            if not context:
+                context = await get_subject_section(request.chapterTitle)
 
         prompt = f"""You are an expert Computer Science educator.
 Create exactly 10 flashcards about the following topic: {request.chapterTitle}.
-Use ONLY the provided lesson content context to generate flashcards. Ensure accuracy based strictly on this content. Do not use general knowledge.
+CRITICAL RULE 1: You MUST ONLY use the provided Context. DO NOT use any outside knowledge.
+CRITICAL RULE 2: You MUST distribute the 10 flashcards evenly across ALL the subtopics (dropdown headers) provided in the context.
+CRITICAL RULE 3: The "back" of the flashcard (answer) MUST be written as a complete, clear, and readable sentence (Subject + Verb + Object). Do not use confusing fragments.
 
 Each flashcard should have:
 - "front": A clear, concise question or term (max 10 words)
-- "back": A VERY short, concise answer (max 15 words). Get straight to the point.
+- "back": A concise but COMPLETE sentence explaining the concept.
 
 FORMATTING: If a flashcard contains both an English technical term and Thai text, ALWAYS put the English term on the first line and the Thai explanation on the next line using '\n'.
 
@@ -516,8 +525,11 @@ async def generate_exam(request: GenerateExamRequest):
         target_domains = bloom_distribution[start_idx:end_idx]
         
         prompt = f"""You are an expert Computer Science examiner.
-Create exactly {batch_size} multiple-choice questions based on the provided context.
+Create exactly {batch_size} multiple-choice questions based strictly on the provided context.
 Focus on the topic: {current_chapter_title}.
+CRITICAL RULE 1: You MUST ONLY use the provided Context. DO NOT use any outside knowledge.
+CRITICAL RULE 2: You MUST distribute the questions evenly across the different concepts in the context.
+CRITICAL RULE 3: Every question and option MUST be written in complete grammatical sentences (Subject + Verb + Object) to ensure maximum clarity.
 
 Each question must strictly follow these assigned cognitive domains from Bloom's Taxonomy in order:
 {", ".join([f"Question {i+1}: {domain}" for i, domain in enumerate(target_domains)])}
@@ -656,7 +668,7 @@ async def get_user_quota(userId: str):
 @app.get("/api/lessons")
 async def get_lessons(course_slug: Optional[str] = None):
     try:
-        query = supabase.table('lessons').select('*').order('order_index')
+        query = supabase.table('curriculum_content').select('*').order('chapter_number').order('id')
         if course_slug:
             query = query.eq('course_slug', course_slug)
         response = query.execute()
@@ -667,8 +679,8 @@ async def get_lessons(course_slug: Optional[str] = None):
 @app.post("/api/lessons")
 async def add_lesson(request: LessonRequest):
     try:
-        response = supabase.table('lessons').insert([
-            {"title": request.title, "content": request.content, "order_index": request.order_index}
+        response = supabase.table('curriculum_content').insert([
+            {"chapter_title": request.title, "dropdown_content": request.content, "chapter_number": request.order_index, "year": 1, "course_slug": "custom", "course_title": "Custom", "dropdown_header": "Custom"}
         ]).execute()
         return response.data[0] if response.data else None
     except Exception as e:

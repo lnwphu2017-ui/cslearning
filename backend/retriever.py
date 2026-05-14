@@ -10,15 +10,32 @@ from langchain_openai import OpenAIEmbeddings
 if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
-# Initialize Embeddings (matching ingest_lessons.py)
+import requests
+
 api_key = os.environ.get("OPENROUTER_API_KEY")
 embedding_model = os.environ.get("OPENROUTER_EMBEDDING_MODEL", "nvidia/llama-nemotron-embed-vl-1b-v2:free")
 
-embeddings = OpenAIEmbeddings(
-    model=embedding_model,
-    openai_api_key=api_key,
-    openai_api_base="https://openrouter.ai/api/v1"
-)
+def get_query_embedding(text: str) -> List[float]:
+    endpoint = "https://openrouter.ai/api/v1/embeddings"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": embedding_model,
+        "input": text
+    }
+    
+    response = requests.post(endpoint, headers=headers, json=payload)
+    if response.status_code != 200:
+        raise Exception(f"OpenRouter Error: {response.status_code} - {response.text}")
+        
+    res_json = response.json()
+    data = res_json.get("data", [])
+    if not data:
+        raise Exception(f"No embedding data received from OpenRouter")
+        
+    return data[0]["embedding"]
 
 _syllabus_text = None
 _subject_sections = None
@@ -62,26 +79,26 @@ def get_full_syllabus() -> str:
 async def search_lessons_vector(query: str, limit: int = 5, course_slug: str = None) -> str:
     """
     Search for relevant lesson content in Supabase using Vector Similarity Search.
-    Uses the match_lesson_chunks RPC function.
+    Uses the match_curriculum_chunks RPC function.
     """
     try:
         if not query.strip():
             return ""
 
         # 1. Generate embedding for the query
-        query_embedding = await embeddings.aembed_query(query)
+        query_embedding = get_query_embedding(query)
 
         # 2. Call Supabase RPC for similarity search
         rpc_params = {
             "query_embedding": query_embedding,
-            "match_threshold": 0.5, # ปรับจูนตามความเหมาะสม
+            "match_threshold": 0.1, # ปรับจูนให้ผ่อนปรนขึ้น
             "match_count": limit,
         }
         
         if course_slug:
             rpc_params["filter_course_slug"] = course_slug
 
-        res = supabase.rpc('match_lesson_chunks', rpc_params).execute()
+        res = supabase.rpc('match_curriculum_chunks', rpc_params).execute()
 
         if not res.data:
             print(f"No vector matches found for: {query[:30]}...")
@@ -91,7 +108,7 @@ async def search_lessons_vector(query: str, limit: int = 5, course_slug: str = N
         formatted_context = "=== ข้อมูลเนื้อหาบทเรียนที่เกี่ยวข้อง (Vector Search Results) ===\n"
         for item in res.data:
             similarity = item.get('similarity', 0)
-            formatted_context += f"บทเรียน: {item['chapter_title']} (วิชา: {item['course_slug']}) [ความเกี่ยวข้อง: {similarity:.2f}]\n"
+            formatted_context += f"หัวข้อ: {item.get('dropdown_header', '')} | บทเรียน: {item.get('chapter_title', '')} (วิชา: {item.get('course_slug', '')}) [ความเกี่ยวข้อง: {similarity:.2f}]\n"
             formatted_context += f"เนื้อหา: {item['content']}\n"
             formatted_context += "---\n"
         
@@ -112,14 +129,14 @@ async def search_lessons_database_legacy(query: str, limit: int = 3) -> str:
             return ""
 
         # Search Title
-        res_title = supabase.table('lessons').select('title, content, course_slug')\
-            .ilike('title', f'%{query_clean}%')\
+        res_title = supabase.table('curriculum_content').select('dropdown_header, dropdown_content, chapter_title, course_slug')\
+            .ilike('dropdown_header', f'%{query_clean}%')\
             .limit(limit).execute()
         
         res_content = []
         if len(res_title.data) < limit:
-            res_content = supabase.table('lessons').select('title, content, course_slug')\
-                .ilike('content', f'%{query_clean}%')\
+            res_content = supabase.table('curriculum_content').select('dropdown_header, dropdown_content, chapter_title, course_slug')\
+                .ilike('dropdown_content', f'%{query_clean}%')\
                 .limit(limit - len(res_title.data)).execute()
             res_content = res_content.data
         else:
@@ -132,8 +149,9 @@ async def search_lessons_database_legacy(query: str, limit: int = 3) -> str:
 
         formatted_context = "=== ข้อมูลเนื้อหาบทเรียนที่เกี่ยวข้อง (Legacy Search) ===\n"
         for i, item in enumerate(combined_results):
-            formatted_context += f"บทเรียน: {item['title']} (รหัสวิชา: {item['course_slug']})\n"
-            content_snippet = item['content'][:1500] + ("..." if len(item['content']) > 1500 else "")
+            formatted_context += f"หัวข้อ: {item.get('dropdown_header', '')} | บทเรียน: {item.get('chapter_title', '')} (รหัสวิชา: {item.get('course_slug', '')})\n"
+            content_snippet = item.get('dropdown_content', '')[:1500]
+            content_snippet += ("..." if len(item.get('dropdown_content', '')) > 1500 else "")
             formatted_context += f"เนื้อหา: {content_snippet}\n"
             formatted_context += "---\n"
         
