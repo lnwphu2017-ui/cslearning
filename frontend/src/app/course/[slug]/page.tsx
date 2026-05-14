@@ -6,6 +6,13 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import courses_data from "@/data/courses.json";
 import year1_content from "@/data/year1-content.json";
+import year2_content from "@/data/year2-content.json";
+
+// รวมข้อมูล static content จากทุกปีเข้าด้วยกัน (year 1 + year 2)
+const ALL_STATIC_CONTENT: Record<string, any> = {
+  ...(year1_content as any),
+  ...(year2_content as any)
+};
 import { apiService } from "@/services/api";
 import { InlineAIChat } from "@/components/InlineAIChat";
 import { FlashcardsTab } from "@/components/FlashcardsTab";
@@ -995,7 +1002,7 @@ export default function CoursePage() {
                   is_loading={loadingLessons}
                   onChangeChapter={setCurrentChapterIdx}
                   onKeywordClick={(kw: string) => setExternalChatPrompt(kw)}
-                  static_content={(year1_content as any)[slug] || null}
+                  static_content={ALL_STATIC_CONTENT[slug] || null}
                 />
               </div>
 
