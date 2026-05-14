@@ -148,11 +148,17 @@ export function QuizPlayer({ questions, OnClose, userId, lessonId }: QuizPlayerP
                       );
                     })}
 
-                    {/* แสดงคำอธิบายสำหรับทุกข้อ */}
+                    {/* แสดงคำอธิบายแยกตามการตอบถูก/ผิด */}
                     {q.explanation && (
-                      <div className="mt-2 p-3 bg-gray-50 rounded-lg border-l-4 border-[#8c8cf3]">
-                        <div className="text-[11px] font-bold text-[#8c8cf3] uppercase tracking-wider mb-1">ทำไมถึงตอบข้อ {correctLetter}? (เหตุผล)</div>
-                        <p className="text-[13px] text-[var(--color-gray-600)] italic leading-relaxed">{q.explanation}</p>
+                      <div className={`mt-4 p-4 rounded-xl border-l-4 ${isCorrectAnswer ? 'bg-green-50 border-green-400' : 'bg-red-50 border-red-400'}`}>
+                        <div className={`text-[12px] font-bold uppercase tracking-wider mb-1.5 ${isCorrectAnswer ? 'text-green-600' : 'text-red-600'}`}>
+                          {isCorrectAnswer ? 'เก่งมาก! คุณตอบถูกต้อง' : 'ข้อนี้คุณตอบผิด'}
+                        </div>
+                        <p className={`text-[14px] leading-relaxed ${isCorrectAnswer ? 'text-green-800' : 'text-red-800'}`}>
+                          {!isCorrectAnswer && <strong>คำตอบที่ถูกต้องคือข้อ {correctLetter} เพราะ </strong>}
+                          {isCorrectAnswer && <strong>เหตุผลเสริม: </strong>}
+                          {q.explanation}
+                        </p>
                       </div>
                     )}
                   </div>

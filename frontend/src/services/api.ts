@@ -10,6 +10,13 @@ export interface ChatMessage {
 }
 
 export const apiService = {
+  // 0. ล้าง Backend In-Memory Cache
+  async ClearBackendCache() {
+    try {
+      await fetch(`${BACKEND_URL}/api/clear-cache`, { method: 'POST' });
+    } catch (_) { /* ไม่ block ถ้า backend ยังไม่พร้อม */ }
+  },
+
   // 1. Chat Generation (direct to backend - can be slow)
   async sendChatMessage(messages: ChatMessage[], userId?: string) {
     try {

@@ -144,7 +144,7 @@ function ChapterView({
   const contentRef = React.useRef<HTMLDivElement>(null);
 
   const topic = topics[chapterIdx] || "";
-  const matchingLesson = lessons.find((l: any) => cleanString(l.title) === cleanString(topic));
+  const matchingLesson = lessons.find((l: any) => cleanString(l.chapter_title || l.title) === cleanString(topic));
 
   const full_content = (matchingLesson?.content || "").replace(/\\n/g, '\n');
 
@@ -712,7 +712,7 @@ export default function CoursePage() {
       try {
         // รอทั้ง API fetch และ minimum delay พร้อมกัน
         const [fetchedLessons] = await Promise.all([
-          apiService.getLessons(current_slug),
+          apiService.getLessons(slug),
           new Promise((resolve) => setTimeout(resolve, MIN_SKELETON_DELAY_MS))
         ]);
         
@@ -731,8 +731,103 @@ export default function CoursePage() {
     loadLessons();
   }, [slug]);
 
+  // --- ล้าง Cache เก่าทุกครั้งที่เปิด/รีเฟรชหน้า เพื่อให้ Pre-warm สร้างข้อมูลใหม่เสมอ ---
+  useEffect(() => {
+    // ล้าง Frontend sessionStorage
+    const keys_to_remove: string[] = [];
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i);
+      if (key && (key.startsWith('flashcard_') || key.startsWith('quiz_'))) {
+        keys_to_remove.push(key);
+      }
+    }
+    keys_to_remove.forEach(k => sessionStorage.removeItem(k));
 
+    // ล้าง Backend In-Memory Cache ด้วย
+    apiService.ClearBackendCache();
 
+    if (keys_to_remove.length > 0) {
+      console.log(`[Cache] ล้าง cache เก่า ${keys_to_remove.length} รายการ`);
+    }
+  }, []);
+
+  // --- ระบบ Pre-warming: สั่ง AI สร้าง Flashcard และ Quiz ล่วงหน้าเบื้องหลังเมื่อผู้ใช้เปิดหน้ามา ---
+  // พอผู้ใช้กด Generate ข้อมูลจะอยู่ใน sessionStorage พร้อมใช้ได้ทันที (< 1 วินาที)
+  useEffect(() => {
+    if (!course || !slug) return;
+    const current_slug = Array.isArray(slug) ? slug[0] : slug;
+    const course_data = ALL_STATIC_CONTENT[current_slug];
+    if (!course_data?.chapters) return;
+
+    // ตัด Content ยาวเกิน 3500 ตัวอักษรที่ขอบประโยค
+    const TrimForPrewarm = (text: string): string => {
+      const MAX = 3500;
+      if (text.length <= MAX) return text;
+      const t = text.substring(0, MAX);
+      const lb = Math.max(t.lastIndexOf('\n'), t.lastIndexOf('.'));
+      return (lb > MAX - 200 ? t.substring(0, lb + 1) : t) + '...';
+    };
+
+    // ยิง API ทีละบทแบบไม่บล็อก (ไม่รอผลลัพธ์) เพื่อเตรียม Cache ไว้ล่วงหน้า
+    const PrewarmChapter = async (chapter_title: string, content: string) => {
+      const flash_key = `flashcard_${current_slug}_${chapter_title}`;
+      const quiz_key = `quiz_${current_slug}_${chapter_title}`;
+      const trimmed = TrimForPrewarm(content);
+
+      // Flashcard: ข้ามถ้ามี Cache อยู่แล้ว
+      if (!sessionStorage.getItem(flash_key)) {
+        try {
+          const data = await apiService.generateFlashcards(chapter_title, trimmed);
+          const cards = data.cards?.map((c: any) => ({ question: c.front, answer: c.back })) || [];
+          sessionStorage.setItem(flash_key, JSON.stringify(cards));
+          console.log(`[Pre-warm] Flashcard cached: ${chapter_title}`);
+        } catch (err) {
+          console.warn(`[Pre-warm] Flashcard failed: ${chapter_title}`, err);
+        }
+      }
+
+      // Quiz: ข้ามถ้ามี Cache อยู่แล้ว
+      if (!sessionStorage.getItem(quiz_key)) {
+        try {
+          const data = await apiService.generateQuiz(chapter_title, trimmed);
+          const questions = data.questions?.map((q: any) => ({
+            question: q.question,
+            options: q.options,
+            correct_answer: q.correctIndex,
+            explanation: q.explanation
+          })) || [];
+          sessionStorage.setItem(quiz_key, JSON.stringify(questions));
+          console.log(`[Pre-warm] Quiz cached: ${chapter_title}`);
+        } catch (err) {
+          console.warn(`[Pre-warm] Quiz failed: ${chapter_title}`, err);
+        }
+      }
+    };
+
+    // เริ่ม Pre-warm ทีละบทแบบ sequential (ไม่ยิงพร้อมกันเพื่อหลีกเลี่ยง Rate Limit)
+    const RunPrewarm = async () => {
+      console.log(`[Pre-warm] เริ่มสร้าง Cache ล่วงหน้าสำหรับ ${course_data.chapters.length} บท...`);
+      for (const chapter of course_data.chapters) {
+        let content = chapter.description || "";
+        if (chapter.dropdowns) {
+          chapter.dropdowns.forEach((d: any) => {
+            content += `\n\n**${d.header}**\n//${d.content}//`;
+          });
+        }
+        await PrewarmChapter(chapter.chapter_title, content);
+        // หน่วงเวลาระหว่างบทเพื่อป้องกัน Rate Limit
+        await new Promise(r => setTimeout(r, 1000));
+      }
+      console.log(`[Pre-warm] เสร็จสิ้น!`);
+    };
+
+    // หน่วง 3 วินาทีก่อนเริ่ม เพื่อให้หน้าเว็บโหลดเสร็จก่อน
+    const prewarm_timer = setTimeout(() => {
+      RunPrewarm();
+    }, 3000);
+
+    return () => clearTimeout(prewarm_timer);
+  }, [course, slug]);
   useEffect(() => {
     if (!course && typeof window !== "undefined") {
       router.push("/");
@@ -752,6 +847,15 @@ export default function CoursePage() {
   };
 
 
+
+  // --- Utility: ตัด Content ยาวเกิน 3500 ตัวอักษรที่ขอบประโยค ---
+  const TrimContent = (content: string): string => {
+    const MAX_CHARS = 3500;
+    if (content.length <= MAX_CHARS) return content;
+    const trimmed = content.substring(0, MAX_CHARS);
+    const lastBreak = Math.max(trimmed.lastIndexOf('\n'), trimmed.lastIndexOf('.'));
+    return (lastBreak > MAX_CHARS - 200 ? trimmed.substring(0, lastBreak + 1) : trimmed) + '...';
+  };
 
   const HandleGenerateFlashcards = async () => {
     if (selected_topics.length === 0) return;
@@ -783,9 +887,42 @@ export default function CoursePage() {
       });
     }, 2000);
     
-    // Find content from lessons.json
+    // ดึงเนื้อหาจาก ALL_STATIC_CONTENT (เนื้อหาที่เราเตรียมไว้สำหรับแสดงผลอยู่แล้ว)
     const topic_name = selected_topics[0];
-    const lesson_content = lessons.find(l => cleanString(l.title) === cleanString(topic_name))?.content || "";
+
+    // --- ตรวจสอบ sessionStorage Cache ก่อน เพื่อความเร็ว ---
+    const session_key = `flashcard_${slug}_${topic_name}`;
+    const cached_raw = sessionStorage.getItem(session_key);
+    if (cached_raw) {
+      try {
+        const cached_cards = JSON.parse(cached_raw);
+        set_flashcards(cached_cards);
+        set_is_viewing_flashcards(true);
+        clearInterval(loadingInterval);
+        clearInterval(progressInterval);
+        set_is_generating_flashcards(false);
+        set_flashcards_loading_step("");
+        return;
+      } catch (_) { /* cache เสียหาย ให้ generate ใหม่ */ }
+    }
+
+    // ดึงเนื้อหาจาก ALL_STATIC_CONTENT (เนื้อหาที่เราเตรียมไว้สำหรับแสดงผลอยู่แล้ว)
+    const current_course_data = ALL_STATIC_CONTENT[slug];
+    let lesson_content = "";
+    if (current_course_data && current_course_data.chapters) {
+      const topic_data = current_course_data.chapters.find((c: any) => cleanString(c.chapter_title) === cleanString(topic_name));
+      if (topic_data) {
+        // ประกอบเนื้อหาจากคำอธิบายและ dropdowns ทั้งหมด
+        lesson_content = topic_data.description || "";
+        if (topic_data.dropdowns) {
+          topic_data.dropdowns.forEach((d: any) => {
+            lesson_content += `\n\n**${d.header}**\n//${d.content}//`;
+          });
+        }
+      }
+    }
+    // ตัด content ที่ยาวเกินเพื่อลด Token
+    lesson_content = TrimContent(lesson_content);
     
     try {
       // Send the first selected topic to the backend
@@ -796,6 +933,9 @@ export default function CoursePage() {
         question: c.front,
         answer: c.back
       }));
+
+      // บันทึกลง sessionStorage เพื่อ cache ไว้ใช้ครั้งถัดไป
+      try { sessionStorage.setItem(session_key, JSON.stringify(mappedCards)); } catch (_) {}
       
       set_flashcards_progress(100);
       setTimeout(() => {
@@ -846,9 +986,40 @@ export default function CoursePage() {
       });
     }, 2500);
 
-    // Find content from lessons.json
+    // ดึงเนื้อหาจาก ALL_STATIC_CONTENT แทน lessons array
     const topic_name = selected_topics[0];
-    const lesson_content = lessons.find(l => cleanString(l.title) === cleanString(topic_name))?.content || "";
+
+    // --- ตรวจสอบ sessionStorage Cache ก่อน ---
+    const session_key = `quiz_${slug}_${topic_name}`;
+    const cached_raw = sessionStorage.getItem(session_key);
+    if (cached_raw) {
+      try {
+        const cached_questions = JSON.parse(cached_raw);
+        set_quiz_questions(cached_questions);
+        set_is_viewing_quiz(true);
+        clearInterval(loadingInterval);
+        clearInterval(progressInterval);
+        set_is_generating_quiz(false);
+        set_quiz_loading_step("");
+        return;
+      } catch (_) { /* cache เสียหาย ให้ generate ใหม่ */ }
+    }
+
+    const current_course_data = ALL_STATIC_CONTENT[slug];
+    let lesson_content = "";
+    if (current_course_data && current_course_data.chapters) {
+      const topic_data = current_course_data.chapters.find((c: any) => cleanString(c.chapter_title) === cleanString(topic_name));
+      if (topic_data) {
+        lesson_content = topic_data.description || "";
+        if (topic_data.dropdowns) {
+          topic_data.dropdowns.forEach((d: any) => {
+            lesson_content += `\n\n**${d.header}**\n//${d.content}//`;
+          });
+        }
+      }
+    }
+    // ตัด content ที่ยาวเกินเพื่อลด Token
+    lesson_content = TrimContent(lesson_content);
 
     try {
       const data = await apiService.generateQuiz(topic_name, lesson_content);
@@ -859,6 +1030,9 @@ export default function CoursePage() {
         correct_answer: q.correctIndex,
         explanation: q.explanation
       }));
+
+      // บันทึกลง sessionStorage
+      try { sessionStorage.setItem(session_key, JSON.stringify(mappedQuestions)); } catch (_) {}
       
       set_quiz_progress(100);
       setTimeout(() => {
@@ -888,38 +1062,67 @@ export default function CoursePage() {
     
     try {
       const examChapters = course.topics.map((topic: string) => {
-        const matchingLesson = lessons.find(l => cleanString(l.title) === cleanString(topic));
+        let content = "";
+        const current_course_data = ALL_STATIC_CONTENT[slug];
+        if (current_course_data && current_course_data.chapters) {
+          const topic_data = current_course_data.chapters.find((c: any) => cleanString(c.chapter_title) === cleanString(topic));
+          if (topic_data) {
+            content = topic_data.description || "";
+            if (topic_data.dropdowns) {
+              topic_data.dropdowns.forEach((d: any) => {
+                content += `\n\n**${d.header}**\n//${d.content}//`;
+              });
+            }
+          }
+        }
         return {
           title: topic,
-          content: matchingLesson?.content || ""
+          content: content
         };
       });
 
-      // วนลูปเรียก API ทีละ Batch พร้อมแสดงสถานะจริง
-      for (let i = 0; i < total_exam_batches; i++) {
-        set_current_exam_batch(i + 1);
-        
-        // คำนวณหัวข้อที่กำลังประมวลผล
+      // --- Parallel Exam: ยิง API เป็นกลุ่ม 2 Batch พร้อมกัน ---
+      // (free model มี rate limit จึงไม่ยิงทีเดียวทั้งหมด)
+      const CONCURRENT_BATCHES = 2;
+      for (let i = 0; i < total_exam_batches; i += CONCURRENT_BATCHES) {
+        // สร้าง batch indices สำหรับกลุ่มนี้
+        const group_indices = Array.from(
+          { length: Math.min(CONCURRENT_BATCHES, total_exam_batches - i) },
+          (_, offset) => i + offset
+        );
+
+        // อัปเดต UI ให้แสดงบทที่กำลังทำ
         const current_topic = course.topics[i % course.topics.length];
-        
-        // อัปเดตข้อความสถานะจริง: แสดงเฉพาะชื่อบทเรียนที่กำลังทำ
-        set_exam_loading_step(`กำลังประมวลผลเนื้อหา: "${current_topic}"...`);
-        
-        // อัปเดตความคืบหน้าจริงตามสัดส่วน Batch
-        const real_progress = Math.floor((i / total_exam_batches) * 100);
-        set_exam_progress(real_progress);
-        
-        const data = await apiService.generateExam(examChapters, slug, i, total_exam_batches);
-        
-        if (data && data.questions) {
-          const mappedBatch = data.questions.map((q: any) => ({
-            question: q.question,
-            options: q.options,
-            correct_answer: q.correctIndex,
-            domain: q.domain,
-            chapterTitle: q.chapterTitle
-          }));
-          collected_questions.push(...mappedBatch);
+        set_current_exam_batch(i + 1);
+        set_exam_loading_step(`กำลังประมวลผลเนื้อหา: "${current_topic}" (กลุ่ม ${Math.floor(i / CONCURRENT_BATCHES) + 1}/${Math.ceil(total_exam_batches / CONCURRENT_BATCHES)})...`);
+        set_exam_progress(Math.floor((i / total_exam_batches) * 90));
+
+        // ยิง API พร้อมกันในกลุ่มนี้
+        const group_results = await Promise.allSettled(
+          group_indices.map(batch_i =>
+            apiService.generateExam(examChapters, slug, batch_i, total_exam_batches)
+          )
+        );
+
+        group_results.forEach(result => {
+          if (result.status === 'fulfilled' && result.value?.questions) {
+            const mappedBatch = result.value.questions.map((q: any) => ({
+              question: q.question,
+              options: q.options,
+              correct_answer: q.correctIndex,
+              domain: q.domain,
+              chapterTitle: q.chapterTitle,
+              explanation: q.explanation
+            }));
+            collected_questions.push(...mappedBatch);
+          } else if (result.status === 'rejected') {
+            console.warn(`Exam batch failed:`, result.reason);
+          }
+        });
+
+        // หน่วงเวลาเล็กน้อยระหว่างกลุ่มเพื่อป้องกัน Rate Limit ของ Free Model
+        if (i + CONCURRENT_BATCHES < total_exam_batches) {
+          await new Promise(resolve => setTimeout(resolve, 800));
         }
       }
 
@@ -1021,7 +1224,14 @@ export default function CoursePage() {
                 <div className={!is_generating_flashcards && is_viewing_flashcards ? "block h-full" : "hidden"}>
                   <FlashcardsPlayer 
                     flashcards={flashcards} 
-                    OnClose={() => set_is_viewing_flashcards(false)} 
+                    OnClose={() => {
+                      set_is_viewing_flashcards(false);
+                      // ล้าง cache ของบทนี้ออก เพื่อให้กด Generate ครั้งถัดไปได้ข้อมูลใหม่
+                      const current_slug = Array.isArray(slug) ? slug[0] : slug;
+                      if (selected_topics[0]) {
+                        sessionStorage.removeItem(`flashcard_${current_slug}_${selected_topics[0]}`);
+                      }
+                    }}
                   />
                 </div>
                 <div className={!is_generating_flashcards && !is_viewing_flashcards ? "block h-full" : "hidden"}>
@@ -1053,9 +1263,16 @@ export default function CoursePage() {
                     <div className={!is_generating_quiz && is_viewing_quiz ? "block h-full" : "hidden"}>
                       <QuizPlayer 
                         questions={quiz_questions} 
-                        OnClose={() => set_is_viewing_quiz(false)} 
+                        OnClose={() => {
+                        set_is_viewing_quiz(false);
+                        // ล้าง cache ของบทนี้ออก เพื่อให้กด Generate ครั้งถัดไปได้ข้อมูลใหม่
+                        const current_slug = Array.isArray(slug) ? slug[0] : slug;
+                        if (selected_topics[0]) {
+                          sessionStorage.removeItem(`quiz_${current_slug}_${selected_topics[0]}`);
+                        }
+                      }}
                         userId={user?.uid}
-                        lessonId={lessons.find(l => cleanString(l.title) === cleanString(selected_topics[0]))?.id}
+                        lessonId={lessons.find(l => cleanString(l.chapter_title || l.title) === cleanString(selected_topics[0]))?.id}
                       />
                     </div>
                     <div className={!is_generating_quiz && !is_viewing_quiz ? "block h-full" : "hidden"}>

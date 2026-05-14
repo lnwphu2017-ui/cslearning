@@ -2,6 +2,8 @@
 import os
 import json
 import traceback
+import hashlib
+import time
 from datetime import datetime
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -67,8 +69,13 @@ app.add_middleware(
 
 # 1. Initialize LLM (OpenRouter) with fallback
 primary_model_name = os.environ.get("OPENROUTER_MODEL", "openai/gpt-oss-120b:free")
+# โมเดลเฉพาะสำหรับ Generation (เร็วกว่า primary เพราะขนาดเล็กกว่า)
+generator_model_name = os.environ.get("OPENROUTER_GENERATOR_MODEL", primary_model_name)
 fallback_model_name = os.environ.get("OPENROUTER_FALLBACK_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
 api_key = os.environ.get("OPENROUTER_API_KEY", "")
+
+print(f"Starting server with model: {primary_model_name} (fallback: {fallback_model_name})")
+print(f"Generation model: {generator_model_name}")
 
 def create_model(model_name: str) -> ChatOpenAI:
     return ChatOpenAI(
@@ -84,6 +91,68 @@ def create_model(model_name: str) -> ChatOpenAI:
 model = create_model(primary_model_name)
 fallback_model = create_model(fallback_model_name)
 
+# --- โมเดลเฉพาะสำหรับ Generation (temperature=0 = deterministic + เร็วกว่า) ---
+# ใช้ OPENROUTER_GENERATOR_MODEL จาก .env (เช่น gemma-3n-e4b-it:free ที่เล็กกว่าและตอบ JSON เร็วกว่า)
+# max_tokens จำกัดความยาว output ป้องกัน AI พิมพ์ยาวเกินความจำเป็น
+def create_generation_model(model_name: str) -> ChatOpenAI:
+    return ChatOpenAI(
+        model=model_name,
+        api_key=api_key,
+        base_url="https://openrouter.ai/api/v1",
+        temperature=0.4,         # สร้างเนื้อหาที่หลากหลายในแต่ละครั้ง แต่ยังมีโครงสร้างดี
+        max_tokens=2000,        # จำกัด output: Flashcard/Quiz ไม่ต้องยาวกว่านี้
+        default_headers={
+            "HTTP-Referer": "http://localhost:5173",
+            "X-Title": "CSL AI Learning Dashboard",
+        }
+    )
+
+# ใช้ generator_model_name (จาก OPENROUTER_GENERATOR_MODEL) แทน primary_model_name
+generation_model = create_generation_model(generator_model_name)
+generation_fallback = create_generation_model(fallback_model_name)
+
+# --- In-Memory Cache สำหรับผลลัพธ์ที่ Generate แล้ว ---
+# key = MD5(type + chapterTitle + content[:300]), value = {"result": ..., "ts": timestamp}
+_generation_cache: dict = {}
+CACHE_TTL = 3600  # 1 ชั่วโมง
+
+def GetCacheKey(gen_type: str, chapter_title: str, content: str) -> str:
+    """สร้าง cache key จาก type + ชื่อบท + เนื้อหา 300 ตัวอักษรแรก"""
+    raw = f"{gen_type}:{chapter_title}:{content[:300]}"
+    return hashlib.md5(raw.encode('utf-8')).hexdigest()
+
+def GetFromCache(key: str):
+    """ดึงข้อมูลจาก cache ถ้ายังไม่หมดอายุ"""
+    entry = _generation_cache.get(key)
+    if entry and (time.time() - entry["ts"]) < CACHE_TTL:
+        return entry["result"]
+    return None
+
+def SetCache(key: str, result: dict):
+    """บันทึกผลลัพธ์เข้า cache"""
+    _generation_cache[key] = {"result": result, "ts": time.time()}
+
+def ClearCache():
+    """ล้าง cache ทั้งหมด เมื่อผู้ใช้รีเฟรชหน้าเว็บ"""
+    count = len(_generation_cache)
+    _generation_cache.clear()
+    print(f"--- CACHE CLEARED: {count} entries removed ---")
+    return count
+
+# --- Utility: ตัด Context ให้สั้นลงเพื่อลด Token โดยไม่ตัดกลางประโยค ---
+MAX_CONTEXT_CHARS = 3500
+
+def TrimContext(content: str) -> str:
+    """ตัด content ที่ยาวเกินไปที่จุดสิ้นสุดประโยคที่ใกล้ที่สุด"""
+    if not content or len(content) <= MAX_CONTEXT_CHARS:
+        return content
+    trimmed = content[:MAX_CONTEXT_CHARS]
+    # หาจุดสิ้นสุดประโยคที่ใกล้ที่สุด (มองย้อนหลัง 200 ตัวอักษร)
+    last_period = max(trimmed.rfind('।'), trimmed.rfind('.'), trimmed.rfind('\n'))
+    if last_period > MAX_CONTEXT_CHARS - 200:
+        trimmed = trimmed[:last_period + 1]
+    return trimmed + "\n[...เนื้อหาถูกตัดย่อเพื่อประสิทธิภาพ...]"
+
 async def invoke_with_fallback(messages, use_model=None):
     """Try primary model first, fallback to secondary if it fails."""
     m = use_model or model
@@ -97,6 +166,34 @@ async def invoke_with_fallback(messages, use_model=None):
             print(f"--- TRYING FALLBACK MODEL: {fallback_model_name} ---")
             return await fallback_model.ainvoke(messages)
         raise
+
+async def InvokeGeneration(messages):
+    """ใช้ generation_model (temperature=0) แทน default model สำหรับ Quiz/Flashcard/Exam
+    Fallback สามชั้น: gemma → llama-fallback → gpt-oss-120b (primary)
+    """
+    # --- ชั้นที่ 1: โมเดล Generation หลัก (gemma-3n-e4b-it) ---
+    try:
+        return await generation_model.ainvoke(messages)
+    except Exception as e1:
+        error_str = str(e1)
+        print(f"Generation model error: {error_str[:150]}")
+        if not any(err in error_str for err in ["404", "429", "503", "NoneType", "iterable", "rate", "Rate"]):
+            raise  # ไม่ใช่ rate limit ให้ raise ทันทีเลย
+
+    # --- ชั้นที่ 2: Fallback (llama-3.3-70b) ---
+    print(f"--- GENERATION FALLBACK ชั้น 2: {fallback_model_name} ---")
+    try:
+        return await generation_fallback.ainvoke(messages)
+    except Exception as e2:
+        error_str2 = str(e2)
+        print(f"Generation fallback error: {error_str2[:150]}")
+        if not any(err in error_str2 for err in ["404", "429", "503", "NoneType", "iterable", "rate", "Rate"]):
+            raise
+
+    # --- ชั้นที่ 3: รอสั้นๆ แล้วลองโมเดล Primary (gpt-oss-120b) ---
+    print(f"--- GENERATION FALLBACK ชั้น 3: {primary_model_name} (รอ 3 วินาที) ---")
+    await asyncio.sleep(3)  # รอให้ rate limit คลายก่อน
+    return await model.ainvoke(messages)  # ใช้ primary chat model เป็นตัวสำรองสุดท้าย
 
 async def invoke_structured_with_fallback(messages, schema):
     """Try structured output with primary model, fallback to secondary."""
@@ -390,6 +487,9 @@ async def generate_quiz(request: GenerateRequest):
             if not context:
                 context = await get_subject_section(request.chapterTitle)
 
+        # ตัด Context ที่ยาวเกินไปเพื่อลด Token (เก็บเนื้อหาสำคัญไว้ครบ)
+        context = TrimContext(context)
+
         prompt = f"""You are an expert Computer Science examiner. 
 Create a 10-question multiple-choice quiz about the following topic: {request.chapterTitle}.
 CRITICAL RULE 1: You MUST ONLY use the provided Context. DO NOT use any outside knowledge.
@@ -411,7 +511,8 @@ You MUST respond ONLY with a valid JSON object in the following format:
       "question": "string",
       "options": ["string", "string", "string", "string"],
       "correctIndex": number,
-      "domain": "string"
+      "domain": "string",
+      "explanation": "string (อธิบายว่าทำไมตัวเลือกนี้ถึงถูกต้องอย่างกระชับ)"
     }}
   ]
 }}
@@ -419,13 +520,30 @@ You MUST respond ONLY with a valid JSON object in the following format:
 Context:
 {context}"""
 
-        result = await invoke_with_fallback([SystemMessage(content=prompt)])
-        return parse_json_from_text(result.content)
+        # ตรวจสอบ Cache ก่อน Generate ใหม่
+        cache_key = GetCacheKey("quiz", request.chapterTitle, context)
+        cached = GetFromCache(cache_key)
+        if cached:
+            print(f"--- CACHE HIT: Quiz [{request.chapterTitle}] ---")
+            return cached
+
+        # ใช้ generation_model (temperature=0) เพื่อความเร็วและความแน่นอน
+        result = await InvokeGeneration([SystemMessage(content=prompt)])
+        parsed = parse_json_from_text(result.content)
+        SetCache(cache_key, parsed)
+        return parsed
         
     except Exception as e:
         print("Quiz Generation Error:", e)
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/clear-cache")
+async def clear_cache():
+    """ล้าง In-Memory Cache ทั้งหมด — เรียกเมื่อผู้ใช้รีเฟรชหน้าเว็บ"""
+    count = ClearCache()
+    return {"cleared": count}
 
 
 @app.post("/api/generate-flashcards")
@@ -440,6 +558,9 @@ async def generate_flashcards(request: GenerateRequest):
             context = await search_lessons_vector(request.chapterTitle, limit=10)
             if not context:
                 context = await get_subject_section(request.chapterTitle)
+
+        # ตัด Context ที่ยาวเกินไปเพื่อลด Token
+        context = TrimContext(context)
 
         prompt = f"""You are an expert Computer Science educator.
 Create exactly 10 flashcards about the following topic: {request.chapterTitle}.
@@ -470,8 +591,18 @@ You MUST respond ONLY with a valid JSON object in the following format. Do not i
 Context:
 {context}"""
 
-        result = await invoke_with_fallback([SystemMessage(content=prompt)])
-        return parse_json_from_text(result.content)
+        # ตรวจสอบ Cache ก่อน Generate ใหม่
+        cache_key = GetCacheKey("flashcard", request.chapterTitle, context)
+        cached = GetFromCache(cache_key)
+        if cached:
+            print(f"--- CACHE HIT: Flashcard [{request.chapterTitle}] ---")
+            return cached
+
+        # ใช้ generation_model (temperature=0)
+        result = await InvokeGeneration([SystemMessage(content=prompt)])
+        parsed = parse_json_from_text(result.content)
+        SetCache(cache_key, parsed)
+        return parsed
         
     except Exception as e:
         print("Flashcard Generation Error:", e)
@@ -498,13 +629,16 @@ async def generate_exam(request: GenerateExamRequest):
         # เลือกบทเรียนหลักสำหรับ Batch นี้
         current_chapter_title = chapter_titles[batch_idx % len(chapter_titles)]
         
-        # ใช้ Vector Search ดึง Context
-        context = await search_lessons_vector(current_chapter_title, limit=8, course_slug=request.courseSlug)
+        # ใช้เนื้อหาเต็มจากที่หน้าเว็บส่งมาเป็นหลัก เพื่อให้อ่านครบทุกหัวข้อย่อย
+        chapter_data = next((c for c in request.chapters if c.get("title") == current_chapter_title), None)
+        context = chapter_data.get("content", "") if chapter_data else ""
         
-        # Fallback
-        if not context:
-            chapter_data = next((c for c in request.chapters if c.get("title") == current_chapter_title), request.chapters[0])
-            context = chapter_data.get("content", "")[:2000]
+        # Fallback หากไม่มีเนื้อหา ค่อยใช้ Vector Search
+        if not context or len(context.strip()) < 50:
+            context = await search_lessons_vector(current_chapter_title, limit=8, course_slug=request.courseSlug)
+
+        # ตัด Context ที่ยาวเกินไปเพื่อลด Token
+        context = TrimContext(context)
 
         # กำหนดสัดส่วน Bloom's Taxonomy ทั้งหมด 40 ข้อ (แบบผสมเพื่อให้กระจายทุกบทเรียน)
         # Remember: 6, Understand: 8, Apply: 10, Analyze: 8, Evaluate: 4, Create: 4
@@ -554,7 +688,8 @@ You MUST respond ONLY with a valid JSON object:
       "options": ["string", "string", "string", "string"],
       "correctIndex": number,
       "domain": "string",
-      "chapterTitle": "string"
+      "chapterTitle": "string",
+      "explanation": "string (อธิบายเหตุผลว่าทำไมถึงตอบข้อนี้อย่างกระชับ)"
     }}
   ]
 }}
@@ -562,9 +697,17 @@ You MUST respond ONLY with a valid JSON object:
 Context:
 {context}"""
 
-        result = await invoke_with_fallback([SystemMessage(content=prompt)])
+        # ตรวจสอบ Cache สำหรับ Exam Batch นี้
+        cache_key = GetCacheKey("exam", current_chapter_title, context + str(batch_idx))
+        cached = GetFromCache(cache_key)
+        if cached:
+            print(f"--- CACHE HIT: Exam Batch {batch_idx} [{current_chapter_title}] ---")
+            return cached
+
+        # ใช้ generation_model (temperature=0) เพื่อความเร็ว
+        result = await InvokeGeneration([SystemMessage(content=prompt)])
         batch_data = parse_json_from_text(result.content)
-        
+        SetCache(cache_key, batch_data)
         return batch_data
         
     except Exception as e:
@@ -579,20 +722,38 @@ async def generate_pdf_summary(request: PDFSummaryRequest):
         print("---GENERATING PDF SUMMARY---")
 
         prompt = f"""You are an expert education analyst. 
-Analyze the performance data and create an EXTREMELY CONCISE, one-page summary report in Thai.
-STRICT LIMIT: MAXIMUM 150 WORDS. 
-The entire output must be very short so it can fit on a single page with a chart and scores.
+Analyze the performance data and create a HIGHLY DETAILED and COMPREHENSIVE summary report in Thai.
+Do NOT limit the word count. Feel free to write as much as needed to provide deep insights.
 
 Data:
 - Score: {request.examResults.get('score')} / {request.examResults.get('total')}
 - Topics: {json.dumps(request.quizScores, ensure_ascii=False)}
-- Skills: {json.dumps(request.radarScores, ensure_ascii=False)}
+- Skills (Bloom's Taxonomy): {json.dumps(request.radarScores, ensure_ascii=False)}
+
+Requirements:
+1. Use rich Markdown formatting (H2, H3, bold text, and bullet points).
+2. Structure the report logically with main headings and subheadings.
+3. Provide a deep analysis of their strengths based on the topic scores and Bloom's taxonomy domains.
+4. Provide highly specific, actionable recommendations on what they need to improve and how they can do it.
+5. EXTREMELY IMPORTANT: Use a highly professional, natural human tone (Professional Human Tone). Do NOT use any emojis. Do NOT use repetitive or robotic phrases (e.g., "จากผลการประเมินพบว่า", "ขอแสดงความยินดี"). Write as if an expert human teacher is giving thoughtful advice to a student.
 
 Structure:
-1. สรุปภาพรวมและจุดแข็ง (Concise Summary)
-2. แนวทางพัฒนา (Key Improvements)
+## สรุปภาพรวมผลการประเมิน (Overall Performance)
+- (Write a detailed paragraph analyzing their overall score and what it implies about their understanding in a natural tone)
 
-Respond ONLY with the Markdown Thai text."""
+## วิเคราะห์จุดแข็งและความเชี่ยวชาญ (Strengths & Expertise)
+### วิเคราะห์รายหัวข้อ (Topic Analysis)
+- (Bullet points detailing strong topics)
+### วิเคราะห์ทักษะการคิด (Cognitive Skills)
+- (Bullet points detailing strong Bloom's taxonomy domains)
+
+## จุดที่ควรพัฒนาและข้อเสนอแนะ (Areas for Improvement & Recommendations)
+### หัวข้อที่ควรทบทวนเพิ่มเติม (Topics to Review)
+- (Bullet points with specific advice on weak topics)
+### ทักษะที่ควรฝึกฝนเพิ่ม (Skills to Practice)
+- (Bullet points with specific advice on weak Bloom's taxonomy domains)
+
+Respond ONLY with the Markdown Thai text. Do not include any emojis or conversational filler."""
 
 
         response = await invoke_with_fallback([SystemMessage(content=prompt)])

@@ -225,15 +225,23 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
       });
 
       // 4. Download the Blob
-      const url = window.URL.createObjectURL(pdfBlob);
+      // ระบุ type ให้ชัดเจนว่าเป็น PDF เพื่อไม่ให้ Browser สับสน
+      const finalBlob = new Blob([pdfBlob], { type: "application/pdf" });
+      const url = window.URL.createObjectURL(finalBlob);
       const link = document.createElement('a');
       link.href = url;
-      const cleanCourseName = courseName ? courseName.replace(/[^a-zA-Z0-9_-]/g, '-') : 'Course';
-      link.setAttribute('download', `${cleanCourseName}-Formal-Report-${new Date().getTime()}.pdf`);
+      
+      // ใช้ชื่อที่ปลอดภัย (ภาษาอังกฤษล้วน) เพื่อป้องกันปัญหา Browser ไม่รับชื่อไฟล์ภาษาไทย
+      link.download = `Exam-Report-${new Date().getTime()}.pdf`;
+      
       document.body.appendChild(link);
       link.click();
-      link.parentNode?.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      
+      // หน่วงเวลาเล็กน้อยก่อนลบ URL ออกจากหน่วยความจำ
+      setTimeout(() => {
+        if (link.parentNode) link.parentNode.removeChild(link);
+        window.URL.revokeObjectURL(url);
+      }, 200);
 
     } catch (error) {
       console.error("PDF Formal Export Error:", error);
@@ -254,11 +262,11 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
     }));
 
     return (
-      <div className="h-full relative bg-[var(--color-gray-50)] animate-in fade-in duration-700 overflow-hidden">
+      <div className="h-full relative bg-white animate-in fade-in duration-700 overflow-hidden">
         {/* 🛡️ SCROLLBAR SHIELDS (Hiding the small triangles/arrows) */}
         {/* We place them at right-[16px] to match the right-4 offset of the container */}
-        <div className="absolute top-0 right-[16px] w-[12px] h-[12px] bg-[var(--color-gray-50)] z-[60] pointer-events-none" />
-        <div className="absolute bottom-0 right-[16px] w-[12px] h-[12px] bg-[var(--color-gray-50)] z-[60] pointer-events-none" />
+        <div className="absolute top-0 right-[16px] w-[12px] h-[12px] bg-white z-[60] pointer-events-none" />
+        <div className="absolute bottom-0 right-[16px] w-[12px] h-[12px] bg-white z-[60] pointer-events-none" />
 
         <div id="result-container" className="absolute top-0 bottom-0 left-0 right-4 px-6 md:px-12 py-10 overflow-y-scroll premium-scrollbar">
           {/* Header Section */}
@@ -457,7 +465,26 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
                   "Data Structures": { correct: 5, total: 5 },
                   "Operating Systems": { correct: 3, total: 5 }
                 },
-                recommendation: "### สรุปภาพรวมและจุดแข็ง\nคะแนนรวม 35/40 (87.5%) แสดงความเข้าใจโดยรวมดีมาก คุณทำได้ดีเป็นพิเศษในส่วนของ **Apply** และ **Remember**...\n\n### สิ่งที่ควรพัฒนาต่อ\nควรเน้นทบทวนในส่วนของ **Analyze** เพิ่มเติม..."
+                recommendation: `## สรุปภาพรวมผลการประเมิน (Overall Performance)
+คะแนนรวมของคุณคือ 35/40 (87.5%) ซึ่งอยู่ในเกณฑ์ระดับยอดเยี่ยม ผลคะแนนนี้แสดงให้เห็นว่าคุณมีความเข้าใจในทฤษฎีพื้นฐานของวิชาวิทยาการคอมพิวเตอร์อย่างถ่องแท้ และสามารถนำแนวคิดที่เรียนไปประยุกต์ใช้ได้อย่างมีประสิทธิภาพ
+
+## วิเคราะห์จุดแข็งและความเชี่ยวชาญ (Strengths & Expertise)
+
+### วิเคราะห์รายหัวข้อ (Topic Analysis)
+- **Data Structures:** ทำคะแนนได้สมบูรณ์แบบ (5/5) แสดงว่าคุณเข้าใจโครงสร้างข้อมูลและการจัดการหน่วยความจำได้อย่างยอดเยี่ยม
+- **Introduction to CS:** ทำคะแนนได้ 5/5 ซึ่งเป็นรากฐานที่สำคัญมากในการต่อยอดไปสู่ระบบที่ซับซ้อนขึ้น
+
+### วิเคราะห์ทักษะการคิด (Cognitive Skills)
+- **Apply (90%):** เป็นจุดแข็งที่โดดเด่นที่สุดของคุณ คุณสามารถนำทฤษฎีไปปรับใช้ในการแก้โจทย์ปัญหาได้อย่างดี
+- **Remember (85%):** มีความจำที่แม่นยำในเรื่องนิยามศัพท์เฉพาะและหลักการทำงานของระบบ
+
+## จุดที่ควรพัฒนาและข้อเสนอแนะ (Areas for Improvement)
+
+### หัวข้อที่ควรทบทวนเพิ่มเติม (Topics to Review)
+- **Operating Systems (3/5):** ควรกลับไปทบทวนเรื่องการจัดการ Process และ Thread ซึ่งเป็นหัวใจหลักของการประมวลผลของ OS
+
+### ทักษะที่ควรฝึกฝนเพิ่ม (Skills to Practice)
+- **Analyze (65%):** ควรฝึกฝนการแยกแยะและการคิดเชิงวิเคราะห์ให้มากขึ้น โดยลองฝึกทำโจทย์ที่มีความซับซ้อน หรือโจทย์อัลกอริทึมที่ต้องวิเคราะห์ Big O Notation`
               });
               set_final_score(35);
               set_is_submitted(true);
