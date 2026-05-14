@@ -985,7 +985,7 @@ export default function CoursePage() {
         // อัปเดต UI ให้แสดงบทที่กำลังทำ
         const current_topic = course.topics[i % course.topics.length];
         set_current_exam_batch(i + 1);
-        set_exam_loading_step(`กำลังประมวลผลเนื้อหา: "${current_topic}" (กลุ่ม ${Math.floor(i / CONCURRENT_BATCHES) + 1}/${Math.ceil(total_exam_batches / CONCURRENT_BATCHES)})...`);
+        set_exam_loading_step(`กำลังประมวลผลเนื้อหา: "${current_topic}"...`);
         set_exam_progress(Math.floor((i / total_exam_batches) * 90));
 
         // ยิง API พร้อมกันในกลุ่มนี้
@@ -1200,28 +1200,7 @@ export default function CoursePage() {
                         course_name={course.name_en}
                         OnGenerate={HandleGenerateExam}
                       />
-                      {/* Dev Mock Button at the bottom of the tab */}
-                      <div className="absolute bottom-4 left-1/2 -translate-x-1/2">
-                        <button 
-                          onClick={() => {
-                            set_exam_questions(new Array(40).fill({
-                              question: "Sample Question",
-                              options: ["A", "B", "C", "D"],
-                              correct_answer: 0,
-                              domain: "Remember",
-                              chapterTitle: "Introduction to CS"
-                            }));
-                            set_is_viewing_exam(true);
-                            // After a tiny delay, we can trigger the mock in ExamPlayer
-                            // but actually we can just pass the data through if we want.
-                            // For now, the user can click this then click the button in ExamPlayer.
-                            // OR I can make a more direct mock here.
-                          }}
-                          className="text-[10px] px-3 py-2 bg-white border border-dashed border-[var(--color-gray-300)] text-[var(--color-gray-400)] rounded-lg hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-all"
-                        >
-                          [Dev: Mock Data & Open Player]
-                        </button>
-                      </div>
+
                     </div>
                   </>
                 )}

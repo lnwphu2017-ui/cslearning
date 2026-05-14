@@ -445,54 +445,7 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
           </p>
         </div>
         <div className="flex items-center gap-4">
-          {/* Dev Mock Button - Remove before production */}
-          <button 
-            onClick={() => {
-              set_result_data({
-                score: 35,
-                total: 40,
-                chartData: [
-                  { subject: 'Remember', A: 85, fullMark: 100 },
-                  { subject: 'Understand', A: 70, fullMark: 100 },
-                  { subject: 'Apply', A: 90, fullMark: 100 },
-                  { subject: 'Analyze', A: 65, fullMark: 100 },
-                  { subject: 'Evaluate', A: 80, fullMark: 100 },
-                  { subject: 'Create', A: 75, fullMark: 100 },
-                ],
-                chapterStats: {
-                  "Introduction to CS": { correct: 5, total: 5 },
-                  "Structured Programming": { correct: 4, total: 5 },
-                  "Data Structures": { correct: 5, total: 5 },
-                  "Operating Systems": { correct: 3, total: 5 }
-                },
-                recommendation: `## สรุปภาพรวมผลการประเมิน (Overall Performance)
-คะแนนรวมของคุณคือ 35/40 (87.5%) ซึ่งอยู่ในเกณฑ์ระดับยอดเยี่ยม ผลคะแนนนี้แสดงให้เห็นว่าคุณมีความเข้าใจในทฤษฎีพื้นฐานของวิชาวิทยาการคอมพิวเตอร์อย่างถ่องแท้ และสามารถนำแนวคิดที่เรียนไปประยุกต์ใช้ได้อย่างมีประสิทธิภาพ
 
-## วิเคราะห์จุดแข็งและความเชี่ยวชาญ (Strengths & Expertise)
-
-### วิเคราะห์รายหัวข้อ (Topic Analysis)
-- **Data Structures:** ทำคะแนนได้สมบูรณ์แบบ (5/5) แสดงว่าคุณเข้าใจโครงสร้างข้อมูลและการจัดการหน่วยความจำได้อย่างยอดเยี่ยม
-- **Introduction to CS:** ทำคะแนนได้ 5/5 ซึ่งเป็นรากฐานที่สำคัญมากในการต่อยอดไปสู่ระบบที่ซับซ้อนขึ้น
-
-### วิเคราะห์ทักษะการคิด (Cognitive Skills)
-- **Apply (90%):** เป็นจุดแข็งที่โดดเด่นที่สุดของคุณ คุณสามารถนำทฤษฎีไปปรับใช้ในการแก้โจทย์ปัญหาได้อย่างดี
-- **Remember (85%):** มีความจำที่แม่นยำในเรื่องนิยามศัพท์เฉพาะและหลักการทำงานของระบบ
-
-## จุดที่ควรพัฒนาและข้อเสนอแนะ (Areas for Improvement)
-
-### หัวข้อที่ควรทบทวนเพิ่มเติม (Topics to Review)
-- **Operating Systems (3/5):** ควรกลับไปทบทวนเรื่องการจัดการ Process และ Thread ซึ่งเป็นหัวใจหลักของการประมวลผลของ OS
-
-### ทักษะที่ควรฝึกฝนเพิ่ม (Skills to Practice)
-- **Analyze (65%):** ควรฝึกฝนการแยกแยะและการคิดเชิงวิเคราะห์ให้มากขึ้น โดยลองฝึกทำโจทย์ที่มีความซับซ้อน หรือโจทย์อัลกอริทึมที่ต้องวิเคราะห์ Big O Notation`
-              });
-              set_final_score(35);
-              set_is_submitted(true);
-            }}
-            className="text-[10px] px-2 py-1 border border-dashed border-[var(--color-gray-200)] text-[var(--color-gray-400)] hover:text-[var(--color-primary)] hover:border-[var(--color-primary)] transition-all rounded"
-          >
-            [Dev: Mock Results]
-          </button>
         </div>
         <button onClick={OnClose} className="p-2 text-[var(--color-gray-400)] hover:text-black transition-colors">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
