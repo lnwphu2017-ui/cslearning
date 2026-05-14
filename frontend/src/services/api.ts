@@ -11,7 +11,7 @@ export interface ChatMessage {
 
 export const apiService = {
   // 0. ล้าง Backend In-Memory Cache
-  async ClearBackendCache() {
+  async clearCache() {
     try {
       await fetch(`${BACKEND_URL}/api/clear-cache`, { method: 'POST' });
     } catch (_) { /* ไม่ block ถ้า backend ยังไม่พร้อม */ }
@@ -89,7 +89,7 @@ export const apiService = {
     }
   },
 
-  // 3. Flashcard Generation (direct to backend - takes 30-60s)
+  // 3. Flashcard Generation (direct to backend - target: 5-10s)
   async generateFlashcards(chapterTitle: string, content?: string) {
     try {
       const res = await fetch(`${BACKEND_URL}/api/generate-flashcards`, {

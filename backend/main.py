@@ -91,25 +91,24 @@ def create_model(model_name: str) -> ChatOpenAI:
 model = create_model(primary_model_name)
 fallback_model = create_model(fallback_model_name)
 
-# --- โมเดลเฉพาะสำหรับ Generation (temperature=0 = deterministic + เร็วกว่า) ---
-# ใช้ OPENROUTER_GENERATOR_MODEL จาก .env (เช่น gemma-3n-e4b-it:free ที่เล็กกว่าและตอบ JSON เร็วกว่า)
-# max_tokens จำกัดความยาว output ป้องกัน AI พิมพ์ยาวเกินความจำเป็น
+# --- โมเดลเฉพาะสำหรับ Generation (เน้นความเร็ว) ---
+# ใช้ OPENROUTER_GENERATOR_MODEL จาก .env (inclusionai/ring-2.6-1t:free — เร็วและตอบ JSON ดี)
+# max_tokens จำกัด output ให้สั้นเพื่อลดเวลาเจน, temperature ต่ำเพื่อ output ที่คงที่
 def create_generation_model(model_name: str) -> ChatOpenAI:
     return ChatOpenAI(
         model=model_name,
         api_key=api_key,
         base_url="https://openrouter.ai/api/v1",
-        temperature=0.4,         # สร้างเนื้อหาที่หลากหลายในแต่ละครั้ง แต่ยังมีโครงสร้างดี
-        max_tokens=2000,        # จำกัด output: Flashcard/Quiz ไม่ต้องยาวกว่านี้
+        temperature=0.3,         # ลดจาก 0.4 เพื่อให้ output คงที่และเร็วขึ้น
+        max_tokens=2000,        # เพิ่มกลับเป็น 2000 เพื่อรองรับ Quiz 10 ข้อ/Exam 5 ข้อแบบละเอียด
         default_headers={
             "HTTP-Referer": "http://localhost:5173",
             "X-Title": "CSL AI Learning Dashboard",
         }
     )
 
-# ใช้ generator_model_name (จาก OPENROUTER_GENERATOR_MODEL) แทน primary_model_name
+# ใช้ generator_model_name ตัวเดียว ไม่มี fallback เพื่อความเร็ว
 generation_model = create_generation_model(generator_model_name)
-generation_fallback = create_generation_model(fallback_model_name)
 
 # --- In-Memory Cache สำหรับผลลัพธ์ที่ Generate แล้ว ---
 # key = MD5(type + chapterTitle + content[:300]), value = {"result": ..., "ts": timestamp}
@@ -140,7 +139,7 @@ def ClearCache():
     return count
 
 # --- Utility: ตัด Context ให้สั้นลงเพื่อลด Token โดยไม่ตัดกลางประโยค ---
-MAX_CONTEXT_CHARS = 3500
+MAX_CONTEXT_CHARS = 1200  # ลดจาก 2000 เพื่อเร็วขึ้น — Flashcard 5 ใบไม่ต้องใช้ context มาก
 
 def TrimContext(content: str) -> str:
     """ตัด content ที่ยาวเกินไปที่จุดสิ้นสุดประโยคที่ใกล้ที่สุด"""
@@ -168,32 +167,10 @@ async def invoke_with_fallback(messages, use_model=None):
         raise
 
 async def InvokeGeneration(messages):
-    """ใช้ generation_model (temperature=0) แทน default model สำหรับ Quiz/Flashcard/Exam
-    Fallback สามชั้น: gemma → llama-fallback → gpt-oss-120b (primary)
+    """ใช้ generation_model (ring-2.6-1t) ตรงๆ ไม่มี fallback เพื่อความเร็วสูงสุด
+    ถ้าเกิด error ให้ raise ขึ้นไปจัดการที่ caller แทน
     """
-    # --- ชั้นที่ 1: โมเดล Generation หลัก (gemma-3n-e4b-it) ---
-    try:
-        return await generation_model.ainvoke(messages)
-    except Exception as e1:
-        error_str = str(e1)
-        print(f"Generation model error: {error_str[:150]}")
-        if not any(err in error_str for err in ["404", "429", "503", "NoneType", "iterable", "rate", "Rate"]):
-            raise  # ไม่ใช่ rate limit ให้ raise ทันทีเลย
-
-    # --- ชั้นที่ 2: Fallback (llama-3.3-70b) ---
-    print(f"--- GENERATION FALLBACK ชั้น 2: {fallback_model_name} ---")
-    try:
-        return await generation_fallback.ainvoke(messages)
-    except Exception as e2:
-        error_str2 = str(e2)
-        print(f"Generation fallback error: {error_str2[:150]}")
-        if not any(err in error_str2 for err in ["404", "429", "503", "NoneType", "iterable", "rate", "Rate"]):
-            raise
-
-    # --- ชั้นที่ 3: รอสั้นๆ แล้วลองโมเดล Primary (gpt-oss-120b) ---
-    print(f"--- GENERATION FALLBACK ชั้น 3: {primary_model_name} (รอ 3 วินาที) ---")
-    await asyncio.sleep(3)  # รอให้ rate limit คลายก่อน
-    return await model.ainvoke(messages)  # ใช้ primary chat model เป็นตัวสำรองสุดท้าย
+    return await generation_model.ainvoke(messages)
 
 async def invoke_structured_with_fallback(messages, schema):
     """Try structured output with primary model, fallback to secondary."""
@@ -211,15 +188,34 @@ async def invoke_structured_with_fallback(messages, schema):
 
 def parse_json_from_text(text: str) -> Dict[str, Any]:
     """Extract and parse JSON from a string that might contain markdown blocks."""
-    raw_text = text.strip()
-    # Remove markdown JSON formatting if present
-    if "```json" in raw_text:
-        raw_text = raw_text.split("```json")[1].split("```")[0]
-    elif "```" in raw_text:
-        raw_text = raw_text.split("```")[1].split("```")[0]
+    if not text or not text.strip():
+        raise ValueError("AI ส่ง response ว่างเปล่ากลับมา")
     
+    raw_text = text.strip()
+    import re
+    
+    raw_text = text.strip()
+    
+    # พยายามดึงเฉพาะก้อน JSON ออกมา (จาก { ถึง })
+    match = re.search(r'\{.*\}', raw_text, re.DOTALL)
+    if match:
+        raw_text = match.group(0)
+    else:
+        # ถ้าหาไม่เจอ ลองดึงแบบ array [ ถึง ]
+        match_arr = re.search(r'\[.*\]', raw_text, re.DOTALL)
+        if match_arr:
+            raw_text = match_arr.group(0)
+            
     raw_text = raw_text.strip()
-    return json.loads(raw_text)
+    
+    if not raw_text:
+        raise ValueError(f"ไม่พบ JSON ใน response: {text[:200]}")
+        
+    try:
+        return json.loads(raw_text)
+    except json.JSONDecodeError as e:
+        print(f"JSON Parse Error. Raw extracted text: {raw_text[:200]}...")
+        raise e
 
 # 2. Schemas for Inputs
 class Message(BaseModel):
@@ -490,48 +486,33 @@ async def generate_quiz(request: GenerateRequest):
         # ตัด Context ที่ยาวเกินไปเพื่อลด Token (เก็บเนื้อหาสำคัญไว้ครบ)
         context = TrimContext(context)
 
-        prompt = f"""You are an expert Computer Science examiner. 
-Create a 10-question multiple-choice quiz about the following topic: {request.chapterTitle}.
-CRITICAL RULE 1: You MUST ONLY use the provided Context. DO NOT use any outside knowledge.
-CRITICAL RULE 2: You MUST distribute the 10 questions evenly across ALL the subtopics (dropdown headers) provided in the context. Do not focus on just one subtopic.
-CRITICAL RULE 3: Every question and option MUST be written in complete grammatical sentences (Subject + Verb + Object) to ensure clarity. Do not use confusing short phrases.
-
-Each question must have exactly 4 options.
-Each question must be classified into one of Bloom's Taxonomy domains: Remember, Understand, Apply, Analyze, Evaluate, Create.
-Try to distribute questions across different domains.
-
-IMPORTANT: All questions and options MUST be written in Thai language. 
-Only use English for technical terms that are commonly used as loanwords.
-Do NOT translate technical terms into Thai — keep them in English.
-
-You MUST respond ONLY with a valid JSON object in the following format:
+        prompt = f"""You are a Computer Science educator. Create a 10-question quiz about: {request.chapterTitle}.
+Rules: Use ONLY the Context below. Write in Thai. Keep English technical terms.
+Each question: 4 options, 1 correct, include explanation.
+JSON format:
 {{
   "questions": [
-    {{
-      "question": "string",
-      "options": ["string", "string", "string", "string"],
-      "correctIndex": number,
-      "domain": "string",
-      "explanation": "string (อธิบายว่าทำไมตัวเลือกนี้ถึงถูกต้องอย่างกระชับ)"
-    }}
+    {{"question": "str", "options": ["a","b","c","d"], "correctIndex": 0, "domain": "Remember", "explanation": "str"}}
   ]
 }}
 
 Context:
 {context}"""
 
-        # ตรวจสอบ Cache ก่อน Generate ใหม่
-        cache_key = GetCacheKey("quiz", request.chapterTitle, context)
-        cached = GetFromCache(cache_key)
-        if cached:
-            print(f"--- CACHE HIT: Quiz [{request.chapterTitle}] ---")
-            return cached
-
-        # ใช้ generation_model (temperature=0) เพื่อความเร็วและความแน่นอน
-        result = await InvokeGeneration([SystemMessage(content=prompt)])
-        parsed = parse_json_from_text(result.content)
-        SetCache(cache_key, parsed)
-        return parsed
+        # ลองสูงสุด 2 ครั้ง เผื่อโมเดลเล็กส่ง response ว่าง
+        last_error = None
+        for attempt in range(2):
+            try:
+                result = await InvokeGeneration([SystemMessage(content=prompt)])
+                print(f"  [Quiz] attempt {attempt+1} response length: {len(result.content or '')} chars")
+                parsed = parse_json_from_text(result.content)
+                return parsed
+            except (json.JSONDecodeError, ValueError) as parse_err:
+                last_error = parse_err
+                print(f"  [Quiz] attempt {attempt+1} parse failed: {parse_err}")
+                if attempt < 1:
+                    await asyncio.sleep(1)
+        raise last_error
         
     except Exception as e:
         print("Quiz Generation Error:", e)
@@ -549,59 +530,48 @@ async def clear_cache():
 @app.post("/api/generate-flashcards")
 async def generate_flashcards(request: GenerateRequest):
     try:
+        start_time = time.time()
         print(f"--- กำลังสร้าง FLASHCARDS สำหรับ: {request.chapterTitle} ---")
         
-        # ใช้เนื้อหาเต็มเพื่อกระจายหัวข้อ
-        context = request.content
+        # ตรวจสอบ Cache ก่อน — ถ้ามีผลลัพธ์เดิมให้ return ทันที (< 1ms)
+        context = request.content or ""
+        cache_key = GetCacheKey("flashcard", request.chapterTitle, context)
+        cached = GetFromCache(cache_key)
+        if cached:
+            print(f"--- CACHE HIT: Flashcard [{request.chapterTitle}] ({time.time()-start_time:.2f}s) ---")
+            return cached
         
+        # ใช้เนื้อหาที่ส่งมาจาก Frontend เป็นหลัก
         if not context or len(context.strip()) < 50:
-            context = await search_lessons_vector(request.chapterTitle, limit=10)
+            context = await search_lessons_vector(request.chapterTitle, limit=5)
             if not context:
                 context = await get_subject_section(request.chapterTitle)
 
         # ตัด Context ที่ยาวเกินไปเพื่อลด Token
         context = TrimContext(context)
 
-        prompt = f"""You are an expert Computer Science educator.
-Create exactly 10 flashcards about the following topic: {request.chapterTitle}.
-CRITICAL RULE 1: You MUST ONLY use the provided Context. DO NOT use any outside knowledge.
-CRITICAL RULE 2: You MUST distribute the 10 flashcards evenly across ALL the subtopics (dropdown headers) provided in the context.
-CRITICAL RULE 3: The "back" of the flashcard (answer) MUST be written as a complete, clear, and readable sentence (Subject + Verb + Object). Do not use confusing fragments.
-
-Each flashcard should have:
-- "front": A clear, concise question or term (max 10 words)
-- "back": A concise but COMPLETE sentence explaining the concept.
-
-FORMATTING: If a flashcard contains both an English technical term and Thai text, ALWAYS put the English term on the first line and the Thai explanation on the next line using '\n'.
-
-IMPORTANT: All content MUST be written in Thai language.
-Only use English for technical terms that are commonly used as loanwords.
-Do NOT translate technical terms into Thai — keep them in English.
-
-You MUST respond ONLY with a valid JSON object in the following format. Do not include markdown code blocks or any explanation text:
-{{
-  "cards": [
-    {{
-      "front": "string",
-      "back": "string"
-    }}
-  ]
-}}
+        # Prompt สั้นกระชับ — เน้นความจำ รูปแบบ ประธาน-กริยา-กรรม
+        prompt = f"""Create 5 memory-focused flashcards about: {request.chapterTitle}.
+Rules: 
+1. Use ONLY the Context below. 
+2. Language: Thai (keep technical terms in English).
+3. Question Style: Extremely short, Subject-Verb-Object (ประธาน-กริยา-กรรม) structure.
+4. Answer Style: Short and concise.
+5. Focus: Pure memory/recall of facts.
+Respond ONLY with valid JSON.
+{{"cards":[{{"front":"ประธาน กริยา กรรม?","back":"คำตอบสั้นๆ"}}]}}
 
 Context:
 {context}"""
 
-        # ตรวจสอบ Cache ก่อน Generate ใหม่
-        cache_key = GetCacheKey("flashcard", request.chapterTitle, context)
-        cached = GetFromCache(cache_key)
-        if cached:
-            print(f"--- CACHE HIT: Flashcard [{request.chapterTitle}] ---")
-            return cached
-
-        # ใช้ generation_model (temperature=0)
+        # เรียก AI ครั้งเดียว ไม่มี retry เพื่อความเร็ว
         result = await InvokeGeneration([SystemMessage(content=prompt)])
+        print(f"  [Flashcard] response length: {len(result.content or '')} chars ({time.time()-start_time:.2f}s)")
         parsed = parse_json_from_text(result.content)
+        
+        # บันทึกเข้า Cache เพื่อให้ครั้งถัดไปเร็วทันที
         SetCache(cache_key, parsed)
+        print(f"--- FLASHCARD DONE: {time.time()-start_time:.2f}s ---")
         return parsed
         
     except Exception as e:

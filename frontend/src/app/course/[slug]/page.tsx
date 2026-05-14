@@ -731,103 +731,7 @@ export default function CoursePage() {
     loadLessons();
   }, [slug]);
 
-  // --- ล้าง Cache เก่าทุกครั้งที่เปิด/รีเฟรชหน้า เพื่อให้ Pre-warm สร้างข้อมูลใหม่เสมอ ---
-  useEffect(() => {
-    // ล้าง Frontend sessionStorage
-    const keys_to_remove: string[] = [];
-    for (let i = 0; i < sessionStorage.length; i++) {
-      const key = sessionStorage.key(i);
-      if (key && (key.startsWith('flashcard_') || key.startsWith('quiz_'))) {
-        keys_to_remove.push(key);
-      }
-    }
-    keys_to_remove.forEach(k => sessionStorage.removeItem(k));
 
-    // ล้าง Backend In-Memory Cache ด้วย
-    apiService.ClearBackendCache();
-
-    if (keys_to_remove.length > 0) {
-      console.log(`[Cache] ล้าง cache เก่า ${keys_to_remove.length} รายการ`);
-    }
-  }, []);
-
-  // --- ระบบ Pre-warming: สั่ง AI สร้าง Flashcard และ Quiz ล่วงหน้าเบื้องหลังเมื่อผู้ใช้เปิดหน้ามา ---
-  // พอผู้ใช้กด Generate ข้อมูลจะอยู่ใน sessionStorage พร้อมใช้ได้ทันที (< 1 วินาที)
-  useEffect(() => {
-    if (!course || !slug) return;
-    const current_slug = Array.isArray(slug) ? slug[0] : slug;
-    const course_data = ALL_STATIC_CONTENT[current_slug];
-    if (!course_data?.chapters) return;
-
-    // ตัด Content ยาวเกิน 3500 ตัวอักษรที่ขอบประโยค
-    const TrimForPrewarm = (text: string): string => {
-      const MAX = 3500;
-      if (text.length <= MAX) return text;
-      const t = text.substring(0, MAX);
-      const lb = Math.max(t.lastIndexOf('\n'), t.lastIndexOf('.'));
-      return (lb > MAX - 200 ? t.substring(0, lb + 1) : t) + '...';
-    };
-
-    // ยิง API ทีละบทแบบไม่บล็อก (ไม่รอผลลัพธ์) เพื่อเตรียม Cache ไว้ล่วงหน้า
-    const PrewarmChapter = async (chapter_title: string, content: string) => {
-      const flash_key = `flashcard_${current_slug}_${chapter_title}`;
-      const quiz_key = `quiz_${current_slug}_${chapter_title}`;
-      const trimmed = TrimForPrewarm(content);
-
-      // Flashcard: ข้ามถ้ามี Cache อยู่แล้ว
-      if (!sessionStorage.getItem(flash_key)) {
-        try {
-          const data = await apiService.generateFlashcards(chapter_title, trimmed);
-          const cards = data.cards?.map((c: any) => ({ question: c.front, answer: c.back })) || [];
-          sessionStorage.setItem(flash_key, JSON.stringify(cards));
-          console.log(`[Pre-warm] Flashcard cached: ${chapter_title}`);
-        } catch (err) {
-          console.warn(`[Pre-warm] Flashcard failed: ${chapter_title}`, err);
-        }
-      }
-
-      // Quiz: ข้ามถ้ามี Cache อยู่แล้ว
-      if (!sessionStorage.getItem(quiz_key)) {
-        try {
-          const data = await apiService.generateQuiz(chapter_title, trimmed);
-          const questions = data.questions?.map((q: any) => ({
-            question: q.question,
-            options: q.options,
-            correct_answer: q.correctIndex,
-            explanation: q.explanation
-          })) || [];
-          sessionStorage.setItem(quiz_key, JSON.stringify(questions));
-          console.log(`[Pre-warm] Quiz cached: ${chapter_title}`);
-        } catch (err) {
-          console.warn(`[Pre-warm] Quiz failed: ${chapter_title}`, err);
-        }
-      }
-    };
-
-    // เริ่ม Pre-warm ทีละบทแบบ sequential (ไม่ยิงพร้อมกันเพื่อหลีกเลี่ยง Rate Limit)
-    const RunPrewarm = async () => {
-      console.log(`[Pre-warm] เริ่มสร้าง Cache ล่วงหน้าสำหรับ ${course_data.chapters.length} บท...`);
-      for (const chapter of course_data.chapters) {
-        let content = chapter.description || "";
-        if (chapter.dropdowns) {
-          chapter.dropdowns.forEach((d: any) => {
-            content += `\n\n**${d.header}**\n//${d.content}//`;
-          });
-        }
-        await PrewarmChapter(chapter.chapter_title, content);
-        // หน่วงเวลาระหว่างบทเพื่อป้องกัน Rate Limit
-        await new Promise(r => setTimeout(r, 1000));
-      }
-      console.log(`[Pre-warm] เสร็จสิ้น!`);
-    };
-
-    // หน่วง 3 วินาทีก่อนเริ่ม เพื่อให้หน้าเว็บโหลดเสร็จก่อน
-    const prewarm_timer = setTimeout(() => {
-      RunPrewarm();
-    }, 3000);
-
-    return () => clearTimeout(prewarm_timer);
-  }, [course, slug]);
   useEffect(() => {
     if (!course && typeof window !== "undefined") {
       router.push("/");
@@ -848,9 +752,9 @@ export default function CoursePage() {
 
 
 
-  // --- Utility: ตัด Content ยาวเกิน 3500 ตัวอักษรที่ขอบประโยค ---
+  // --- Utility: ตัด Content ยาวเกิน 2000 ตัวอักษรเพื่อลด Token และเพิ่มความเร็ว ---
   const TrimContent = (content: string): string => {
-    const MAX_CHARS = 3500;
+    const MAX_CHARS = 2000;
     if (content.length <= MAX_CHARS) return content;
     const trimmed = content.substring(0, MAX_CHARS);
     const lastBreak = Math.max(trimmed.lastIndexOf('\n'), trimmed.lastIndexOf('.'));
@@ -864,14 +768,15 @@ export default function CoursePage() {
     set_flashcards_progress(0);
     set_flashcards_loading_step("กำลังเตรียมเนื้อหาสำหรับ Flashcards...");
 
-    // จำลอง Progress ให้ดูพรีเมียม
+    // จำลอง Progress — เร่งให้เร็วขึ้นเพื่อ UX ที่ดีในเป้าหมาย 10 วินาที
     const progressInterval = setInterval(() => {
       set_flashcards_progress(prev => {
-        if (prev < 90) return prev + (Math.random() * 1.2);
+        if (prev < 90) return prev + (Math.random() * 3);
         return prev;
       });
-    }, 200);
+    }, 100);
 
+    // เปลี่ยนข้อความ Loading เร็วขึ้น (1.2 วินาทีต่อ step)
     const loadingInterval = setInterval(() => {
       const steps = [
         "กำลังสรุปประเด็นสำคัญ...",
@@ -885,28 +790,12 @@ export default function CoursePage() {
         if (currentIdx < steps.length - 1) return steps[currentIdx + 1];
         return prev;
       });
-    }, 2000);
+    }, 1200);
     
     // ดึงเนื้อหาจาก ALL_STATIC_CONTENT (เนื้อหาที่เราเตรียมไว้สำหรับแสดงผลอยู่แล้ว)
     const topic_name = selected_topics[0];
 
-    // --- ตรวจสอบ sessionStorage Cache ก่อน เพื่อความเร็ว ---
-    const session_key = `flashcard_${slug}_${topic_name}`;
-    const cached_raw = sessionStorage.getItem(session_key);
-    if (cached_raw) {
-      try {
-        const cached_cards = JSON.parse(cached_raw);
-        set_flashcards(cached_cards);
-        set_is_viewing_flashcards(true);
-        clearInterval(loadingInterval);
-        clearInterval(progressInterval);
-        set_is_generating_flashcards(false);
-        set_flashcards_loading_step("");
-        return;
-      } catch (_) { /* cache เสียหาย ให้ generate ใหม่ */ }
-    }
-
-    // ดึงเนื้อหาจาก ALL_STATIC_CONTENT (เนื้อหาที่เราเตรียมไว้สำหรับแสดงผลอยู่แล้ว)
+    // ดึงเนื้อหาจาก ALL_STATIC_CONTENT
     const current_course_data = ALL_STATIC_CONTENT[slug];
     let lesson_content = "";
     if (current_course_data && current_course_data.chapters) {
@@ -925,33 +814,30 @@ export default function CoursePage() {
     lesson_content = TrimContent(lesson_content);
     
     try {
-      // Send the first selected topic to the backend
+      // ส่ง topic ที่เลือกไป Backend เพื่อเจน Flashcards
       const data = await apiService.generateFlashcards(topic_name, lesson_content);
       
-      // Map API response to match the FlashcardsPlayer expected format
+      // Map API response เข้ารูปแบบ FlashcardsPlayer
       const mappedCards = data.cards.map((c: any) => ({
         question: c.front,
         answer: c.back
       }));
-
-      // บันทึกลง sessionStorage เพื่อ cache ไว้ใช้ครั้งถัดไป
-      try { sessionStorage.setItem(session_key, JSON.stringify(mappedCards)); } catch (_) {}
       
+      // แสดงผลทันทีไม่ต้องรอ — ลบ setTimeout 500ms ออก
       set_flashcards_progress(100);
-      setTimeout(() => {
-        set_flashcards(mappedCards);
-        set_is_viewing_flashcards(true);
-      }, 500);
+      set_flashcards(mappedCards);
+      set_is_viewing_flashcards(true);
     } catch (error) {
       console.error("Failed to generate flashcards:", error);
       alert("เกิดข้อผิดพลาดในการสร้าง Flashcards");
     } finally {
+      // ล้าง interval ทันที — ลด delay จาก 800ms เป็น 200ms
+      clearInterval(loadingInterval);
+      clearInterval(progressInterval);
       setTimeout(() => {
-        clearInterval(loadingInterval);
-        clearInterval(progressInterval);
         set_is_generating_flashcards(false);
         set_flashcards_loading_step("");
-      }, 800);
+      }, 200);
     }
   };
 
@@ -989,22 +875,6 @@ export default function CoursePage() {
     // ดึงเนื้อหาจาก ALL_STATIC_CONTENT แทน lessons array
     const topic_name = selected_topics[0];
 
-    // --- ตรวจสอบ sessionStorage Cache ก่อน ---
-    const session_key = `quiz_${slug}_${topic_name}`;
-    const cached_raw = sessionStorage.getItem(session_key);
-    if (cached_raw) {
-      try {
-        const cached_questions = JSON.parse(cached_raw);
-        set_quiz_questions(cached_questions);
-        set_is_viewing_quiz(true);
-        clearInterval(loadingInterval);
-        clearInterval(progressInterval);
-        set_is_generating_quiz(false);
-        set_quiz_loading_step("");
-        return;
-      } catch (_) { /* cache เสียหาย ให้ generate ใหม่ */ }
-    }
-
     const current_course_data = ALL_STATIC_CONTENT[slug];
     let lesson_content = "";
     if (current_course_data && current_course_data.chapters) {
@@ -1030,9 +900,6 @@ export default function CoursePage() {
         correct_answer: q.correctIndex,
         explanation: q.explanation
       }));
-
-      // บันทึกลง sessionStorage
-      try { sessionStorage.setItem(session_key, JSON.stringify(mappedQuestions)); } catch (_) {}
       
       set_quiz_progress(100);
       setTimeout(() => {
@@ -1226,11 +1093,7 @@ export default function CoursePage() {
                     flashcards={flashcards} 
                     OnClose={() => {
                       set_is_viewing_flashcards(false);
-                      // ล้าง cache ของบทนี้ออก เพื่อให้กด Generate ครั้งถัดไปได้ข้อมูลใหม่
-                      const current_slug = Array.isArray(slug) ? slug[0] : slug;
-                      if (selected_topics[0]) {
-                        sessionStorage.removeItem(`flashcard_${current_slug}_${selected_topics[0]}`);
-                      }
+                      apiService.clearCache(); // ล้าง Cache ทันทีเมื่อปิด เพื่อให้เจนใหม่ได้เนื้อหาใหม่
                     }}
                   />
                 </div>
@@ -1264,13 +1127,9 @@ export default function CoursePage() {
                       <QuizPlayer 
                         questions={quiz_questions} 
                         OnClose={() => {
-                        set_is_viewing_quiz(false);
-                        // ล้าง cache ของบทนี้ออก เพื่อให้กด Generate ครั้งถัดไปได้ข้อมูลใหม่
-                        const current_slug = Array.isArray(slug) ? slug[0] : slug;
-                        if (selected_topics[0]) {
-                          sessionStorage.removeItem(`quiz_${current_slug}_${selected_topics[0]}`);
-                        }
-                      }}
+                          set_is_viewing_quiz(false);
+                          apiService.clearCache(); // ล้าง Cache ทันทีเมื่อปิด
+                        }}
                         userId={user?.uid}
                         lessonId={lessons.find(l => cleanString(l.chapter_title || l.title) === cleanString(selected_topics[0]))?.id}
                       />
