@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { onAuthStateChanged, signInWithPopup, signOut, User } from "firebase/auth";
+import { onAuthStateChanged, signInWithRedirect, getRedirectResult, signOut, User } from "firebase/auth";
 import { auth, googleProvider } from "@/lib/firebase";
 
 // --- Types ---
@@ -37,10 +37,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => unsubscribe();
   }, []);
 
+  // ตรวจสอบผลลัพธ์ redirect หลัง Google Login กลับมา
+  useEffect(() => {
+    getRedirectResult(auth)
+      .then((result) => {
+        if (result?.user) {
+          setIsModalOpen(false);
+        }
+      })
+      .catch((error) => {
+        console.error("Redirect result error:", error);
+      });
+  }, []);
+
   const loginWithGoogle = async () => {
     try {
-      await signInWithPopup(auth, googleProvider);
-      setIsModalOpen(false); // ปิด modal เมื่อล็อกอินสำเร็จ
+      // ใช้ Redirect แทน Popup เพื่อรองรับ production deployment
+      await signInWithRedirect(auth, googleProvider);
     } catch (error) {
       console.error("Google login error:", error);
     }
