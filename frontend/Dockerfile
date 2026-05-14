@@ -8,13 +8,16 @@ WORKDIR /app
 COPY package*.json ./
 
 # ติดตั้ง dependencies
-RUN npm install
+RUN npm ci
 
 # คัดลอกโค้ดทั้งหมดเข้าไปใน Container
 COPY . .
 
+# Build Next.js สำหรับ Production
+RUN npm run build
+
 # เปิด Port 3000
 EXPOSE 3000
 
-# รัน Frontend ในโหมด Development (ตามคำสั่ง npm run dev)
-CMD ["npm", "run", "dev"]
+# รัน Frontend ในโหมด Production
+CMD ["npm", "start"]
