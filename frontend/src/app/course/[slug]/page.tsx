@@ -7,11 +7,15 @@ import Link from "next/link";
 import courses_data from "@/data/courses.json";
 import year1_content from "@/data/year1-content.json";
 import year2_content from "@/data/year2-content.json";
+import year3_content from "@/data/year3-content.json";
+import year4_content from "@/data/year4-content.json";
 
-// รวมข้อมูล static content จากทุกปีเข้าด้วยกัน (year 1 + year 2)
+// รวมข้อมูล static content จากทุกปีเข้าด้วยกัน (year 1 + year 2 + year 3 + year 4)
 const ALL_STATIC_CONTENT: Record<string, any> = {
   ...(year1_content as any),
-  ...(year2_content as any)
+  ...(year2_content as any),
+  ...(year3_content as any),
+  ...(year4_content as any)
 };
 import { apiService } from "@/services/api";
 import { InlineAIChat } from "@/components/InlineAIChat";
