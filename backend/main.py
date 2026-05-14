@@ -472,7 +472,57 @@ async def chat_stream(request: ChatRequest):
 @app.post("/api/generate-quiz")
 async def generate_quiz(request: GenerateRequest):
     try:
-        print(f"--- กำลังสร้าง QUIZ สำหรับ: {request.chapterTitle} ---")
+        start_time = time.time()
+        print(f"--- กำลังสร้าง QUIZ (Parallel 5+5) สำหรับ: {request.chapterTitle} ---")
+        
+        # 1. เตรียม Context
+        context = request.content
+        if not context or len(context.strip()) < 50:
+            context = await search_lessons_vector(request.chapterTitle, limit=10)
+            if not context:
+                context = await get_subject_section(request.chapterTitle)
+        context = TrimContext(context)
+
+        # 2. ฟังก์ชันภายในสำหรับเจนแต่ละชุด (ชุดละ 5 ข้อ)
+        async def fetch_quiz_batch(batch_num: int):
+            batch_prompt = f"""You are a Computer Science educator. Create 5 multiple-choice questions about: {request.chapterTitle}.
+Rules: Use ONLY the Context below. Write in Thai. Keep English technical terms.
+Each question: 4 options, 1 correct, include explanation.
+JSON format:
+{{
+  "questions": [
+    {{"question": "str", "options": ["a","b","c","d"], "correctIndex": 0, "domain": "Understand", "explanation": "str"}}
+  ]
+}}
+
+Context:
+{context}"""
+            
+            for attempt in range(2):
+                try:
+                    result = await InvokeGeneration([SystemMessage(content=batch_prompt)])
+                    return parse_json_from_text(result.content).get("questions", [])
+                except Exception as e:
+                    print(f"  [Quiz Batch {batch_num}] attempt {attempt+1} failed: {e}")
+                    if attempt < 1: await asyncio.sleep(1)
+            return []
+
+        # 3. รันพร้อมกัน 2 งาน (Parallel)
+        tasks = [fetch_quiz_batch(1), fetch_quiz_batch(2)]
+        results = await asyncio.gather(*tasks)
+        
+        # 4. รวมผลลัพธ์
+        all_questions = []
+        for batch_questions in results:
+            all_questions.extend(batch_questions)
+            
+        print(f"--- QUIZ DONE: {len(all_questions)} questions in {time.time()-start_time:.2f}s ---")
+        return {"questions": all_questions}
+        
+    except Exception as e:
+        print("Quiz Parallel Generation Error:", e)
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
         
         # ใช้เนื้อหาเต็ม (request.content) เป็นหลักเพื่อให้อ่านครบทุกหัวข้อย่อย
         context = request.content
@@ -531,51 +581,52 @@ async def clear_cache():
 async def generate_flashcards(request: GenerateRequest):
     try:
         start_time = time.time()
-        print(f"--- กำลังสร้าง FLASHCARDS สำหรับ: {request.chapterTitle} ---")
+        print(f"--- กำลังสร้าง FLASHCARDS (Parallel 3+2) สำหรับ: {request.chapterTitle} ---")
         
-        # ตรวจสอบ Cache ก่อน — ถ้ามีผลลัพธ์เดิมให้ return ทันที (< 1ms)
-        context = request.content or ""
-        cache_key = GetCacheKey("flashcard", request.chapterTitle, context)
-        cached = GetFromCache(cache_key)
-        if cached:
-            print(f"--- CACHE HIT: Flashcard [{request.chapterTitle}] ({time.time()-start_time:.2f}s) ---")
-            return cached
-        
-        # ใช้เนื้อหาที่ส่งมาจาก Frontend เป็นหลัก
+        # 1. เตรียม Context
+        context = request.content
         if not context or len(context.strip()) < 50:
-            context = await search_lessons_vector(request.chapterTitle, limit=5)
-            if not context:
-                context = await get_subject_section(request.chapterTitle)
-
-        # ตัด Context ที่ยาวเกินไปเพื่อลด Token
+            context = await search_lessons_vector(request.chapterTitle, limit=10)
         context = TrimContext(context)
 
-        # Prompt สั้นกระชับ — เน้นความจำ รูปแบบ ประธาน-กริยา-กรรม
-        prompt = f"""Create 5 memory-focused flashcards about: {request.chapterTitle}.
-Rules: 
-1. Use ONLY the Context below. 
-2. Language: Thai (keep technical terms in English).
-3. Question Style: Extremely short, Subject-Verb-Object (ประธาน-กริยา-กรรม) structure.
-4. Answer Style: Short and concise.
-5. Focus: Pure memory/recall of facts.
-Respond ONLY with valid JSON.
-{{"cards":[{{"front":"ประธาน กริยา กรรม?","back":"คำตอบสั้นๆ"}}]}}
+        # 2. ฟังก์ชันภายในสำหรับเจนแต่ละชุด
+        async def fetch_cards_batch(count: int):
+            batch_prompt = f"""You are a teacher. Create {count} flashcards (front/back) about: {request.chapterTitle}.
+Rules: Thai only. Use natural sentences (Subject-Verb-Object). No '+'. 
+Format: Short question on front, short answer on back. Recall-focused.
+JSON format:
+{{
+  "cards": [
+    {{"front": "คำถาม?", "back": "คำตอบ"}}
+  ]
+}}
 
 Context:
 {context}"""
+            
+            for attempt in range(2):
+                try:
+                    result = await InvokeGeneration([SystemMessage(content=batch_prompt)])
+                    return parse_json_from_text(result.content).get("cards", [])
+                except Exception as e:
+                    print(f"  [Flashcard Batch {count}] attempt {attempt+1} failed: {e}")
+                    if attempt < 1: await asyncio.sleep(1)
+            return []
 
-        # เรียก AI ครั้งเดียว ไม่มี retry เพื่อความเร็ว
-        result = await InvokeGeneration([SystemMessage(content=prompt)])
-        print(f"  [Flashcard] response length: {len(result.content or '')} chars ({time.time()-start_time:.2f}s)")
-        parsed = parse_json_from_text(result.content)
+        # 3. รันพร้อมกัน (Parallel 3 ข้อ และ 2 ข้อ)
+        tasks = [fetch_cards_batch(3), fetch_cards_batch(2)]
+        results = await asyncio.gather(*tasks)
         
-        # บันทึกเข้า Cache เพื่อให้ครั้งถัดไปเร็วทันที
-        SetCache(cache_key, parsed)
-        print(f"--- FLASHCARD DONE: {time.time()-start_time:.2f}s ---")
-        return parsed
+        # 4. รวมผลลัพธ์
+        all_cards = []
+        for batch_cards in results:
+            all_cards.extend(batch_cards)
+            
+        print(f"--- FLASHCARDS DONE: {len(all_cards)} cards in {time.time()-start_time:.2f}s ---")
+        return {"cards": all_cards}
         
     except Exception as e:
-        print("Flashcard Generation Error:", e)
+        print("Flashcard Parallel Generation Error:", e)
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -96,9 +96,9 @@ export function QuizPlayer({ questions, OnClose, userId, lessonId }: QuizPlayerP
           </div>
 
           <div className="flex-1 min-h-0 overflow-hidden relative">
-            {/* 🛡️ INTERNAL COVER TRICK (Hiding Scrollbar Arrows) - Reduced height to not overlap content */}
-            <div className="absolute top-0 right-0 w-8 h-2 bg-white z-[60] pointer-events-none" />
-            <div className="absolute bottom-0 right-0 w-8 h-2 bg-white z-[60] pointer-events-none" />
+            {/* 🛡️ INTERNAL COVER TRICK (Hiding Scrollbar Arrows) */}
+            <div className="absolute top-0 right-[2px] w-3 h-4 bg-white z-[60] pointer-events-none" />
+            <div className="absolute bottom-0 right-[2px] w-3 h-4 bg-white z-[60] pointer-events-none" />
 
             <div className="absolute inset-0 overflow-y-auto premium-scrollbar pr-2 space-y-6 pb-10">
               {questions.map((q, qIdx) => {
@@ -127,12 +127,13 @@ export function QuizPlayer({ questions, OnClose, userId, lessonId }: QuizPlayerP
                       let textColor = "text-[var(--color-gray-600)]";
 
                       if (isOptionCorrect) {
-                        bgColor = "bg-[#8c8cf3]/10";
-                        borderColor = "border-[#8c8cf3]";
-                        textColor = "text-[#8c8cf3] font-bold";
-                      } else if (isOptionSelected) {
-                        borderColor = "border-[var(--color-gray-400)]";
-                        textColor = "text-[var(--color-black)] font-medium line-through opacity-60";
+                        bgColor = "bg-[#b9f28d]"; // เขียวที่คุณกำหนด
+                        borderColor = "border-[#b9f28d]";
+                        textColor = "text-black font-bold";
+                      } else if (isOptionSelected && !isCorrectAnswer) {
+                        bgColor = "bg-[#f28d8d]"; // แดงที่คุณกำหนด
+                        borderColor = "border-[#f28d8d]";
+                        textColor = "text-white font-medium";
                       }
 
                       return (
@@ -140,7 +141,11 @@ export function QuizPlayer({ questions, OnClose, userId, lessonId }: QuizPlayerP
                           key={oIdx} 
                           className={`flex items-center gap-3 p-2.5 rounded-lg border-2 text-[13px] transition-all ${bgColor} ${borderColor} ${textColor}`}
                         >
-                          <span className={`w-6 h-6 shrink-0 rounded-md border flex items-center justify-center text-[10px] font-bold ${isOptionCorrect ? 'bg-[#8c8cf3] border-[#8c8cf3] text-white' : 'border-gray-200 text-gray-400'}`}>
+                          <span className={`w-6 h-6 shrink-0 rounded-md border flex items-center justify-center text-[10px] font-bold ${
+                            isOptionCorrect 
+                              ? 'bg-black/10 border-black/20 text-black' 
+                              : (isOptionSelected ? 'border-white/40 text-white' : 'border-gray-200 text-gray-400')
+                          }`}>
                             {["A", "B", "C", "D"][oIdx]}
                           </span>
                           <span>{opt}</span>
@@ -148,15 +153,11 @@ export function QuizPlayer({ questions, OnClose, userId, lessonId }: QuizPlayerP
                       );
                     })}
 
-                    {/* แสดงคำอธิบายแยกตามการตอบถูก/ผิด */}
-                    {q.explanation && (
-                      <div className={`mt-4 p-4 rounded-xl border-l-4 ${isCorrectAnswer ? 'bg-green-50 border-green-400' : 'bg-red-50 border-red-400'}`}>
-                        <div className={`text-[12px] font-bold uppercase tracking-wider mb-1.5 ${isCorrectAnswer ? 'text-green-600' : 'text-red-600'}`}>
-                          {isCorrectAnswer ? 'เก่งมาก! คุณตอบถูกต้อง' : 'ข้อนี้คุณตอบผิด'}
-                        </div>
-                        <p className={`text-[14px] leading-relaxed ${isCorrectAnswer ? 'text-green-800' : 'text-red-800'}`}>
-                          {!isCorrectAnswer && <strong>คำตอบที่ถูกต้องคือข้อ {correctLetter} เพราะ </strong>}
-                          {isCorrectAnswer && <strong>เหตุผลเสริม: </strong>}
+                    {/* แสดงคำอธิบายเฉพาะตอนตอบผิดเท่านั้น */}
+                    {!isCorrectAnswer && q.explanation && (
+                      <div className="mt-4 p-4 rounded-xl bg-red-50">
+                        <p className="text-[14px] leading-relaxed text-red-800">
+                          <strong>ตอบ {correctLetter} เพราะ </strong>
                           {q.explanation}
                         </p>
                       </div>
@@ -168,14 +169,6 @@ export function QuizPlayer({ questions, OnClose, userId, lessonId }: QuizPlayerP
             </div>
           </div>
           
-          <div className="pt-4 shrink-0 border-t border-[var(--color-gray-100)]">
-             <button
-              onClick={OnClose}
-              className="w-full py-4 bg-[#8c8cf3] text-white rounded-lg font-bold text-lg hover:brightness-110"
-            >
-              Back to Course
-            </button>
-          </div>
         </div>
       );
     }
