@@ -31,8 +31,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # คัดลอกโค้ดทั้งหมดเข้าไปใน Container
 COPY . .
 
-# เปิด Port 5000 (ตามที่ตั้งไว้ใน main.py)
+# เปิด Port (Render จะส่งค่า PORT ผ่าน environment variable)
 EXPOSE 5000
 
-# รัน Backend server
-CMD ["python", "main.py"]
+# รัน Backend server ผ่าน uvicorn (ใช้ shell form เพื่อให้ $PORT expand ได้)
+CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-5000}

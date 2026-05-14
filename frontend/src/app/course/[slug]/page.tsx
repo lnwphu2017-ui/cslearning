@@ -317,25 +317,27 @@ function ChapterView({
     }
   });
 
-  // ===== กำหนด dropdownParts — ใช้ static_content จาก year1-content.json ถ้ามี =====
-  // ถ้ามี static_content (วิชาปี 1) ให้ใช้ข้อมูลจาก JSON โดยตรง ไม่ต้อง parse จาก markdown
-  // ถ้าไม่มี fallback ไปใช้ groupedSections ที่ parse จาก API content
-  const dropdownParts = React.useMemo(() => {
+  // ===== ค้นหา static_chapter จาก year1-content.json (ถ้ามี) =====
+  const static_chapter = React.useMemo(() => {
     if (static_content && static_content.chapters) {
-      // ค้นหา chapter ที่ตรงกับ chapterIdx (chapter_number = chapterIdx + 1)
-      const static_chapter = static_content.chapters.find(
+      return static_content.chapters.find(
         (ch: any) => ch.chapter_number === chapterIdx + 1
       );
-      if (static_chapter && static_chapter.dropdowns.length > 0) {
-        return static_chapter.dropdowns.map((d: any) => ({
-          header: d.header,
-          body: d.content
-        }));
-      }
+    }
+    return null;
+  }, [static_content, chapterIdx]);
+
+  // ===== กำหนด dropdownParts =====
+  const dropdownParts = React.useMemo(() => {
+    if (static_chapter && static_chapter.dropdowns && static_chapter.dropdowns.length > 0) {
+      return static_chapter.dropdowns.map((d: any) => ({
+        header: d.header,
+        body: d.content
+      }));
     }
     // Fallback: ใช้ groupedSections จาก API content (logic เดิม)
     return groupedSections;
-  }, [static_content, chapterIdx, groupedSections]);
+  }, [static_chapter, groupedSections]);
   
   // สถานะการเปิดกล่องเนื้อหา (Progress) — ใช้ topic เป็น key เพื่อความแม่นยำ
   const [viewed_boxes, set_viewed_boxes] = React.useState<Set<number>>(new Set());
@@ -507,13 +509,35 @@ function ChapterView({
             prose-blockquote:border-l-4 prose-blockquote:border-[var(--color-primary)] prose-blockquote:bg-[var(--color-gray-50)] prose-blockquote:py-1 prose-blockquote:px-5 prose-blockquote:rounded-r-lg prose-blockquote:italic
             ">
               
-              {/* Intro Content */}
+              {/* Keywords Block (จาก static content) */}
+              {static_chapter?.keywords && (
+                <blockquote className="border-l-4 border-[var(--color-primary)] bg-[var(--color-gray-50)] py-3 px-5 rounded-r-lg italic my-6 animate-in fade-in slide-in-from-left-4 duration-700">
+                  <strong className="not-italic">Keyword</strong>:{" "}
+                  {static_chapter.keywords.split(',').map((kw: string, i: number) => {
+                    const cleanKw = kw.trim();
+                    const kwList = static_chapter.keywords.split(',');
+                    return (
+                      <span key={i}>
+                        <span
+                          onClick={() => onKeywordClick(`ช่วยอธิบายเพิ่มเติมเกี่ยวกับ "${cleanKw}" ในบริบทของบทเรียนนี้หน่อยครับ`)}
+                          className="cursor-pointer hover:text-[var(--color-primary)] hover:underline underline-offset-4 decoration-dashed transition-all font-medium"
+                        >
+                          {cleanKw}
+                        </span>
+                        {i < kwList.length - 1 ? ", " : ""}
+                      </span>
+                    );
+                  })}
+                </blockquote>
+              )}
+
+              {/* Intro Content (ใช้จาก static content ถ้ามี ถ้าไม่มีใช้จาก API) */}
               <ReactMarkdown 
                 remarkPlugins={[remarkGfm, remarkMath]} 
                 rehypePlugins={[rehypeKatex, rehypeRaw]}
                 components={markdownComponents}
               >
-                {processLinks(introPart)}
+                {processLinks(static_chapter?.introduction || introPart)}
               </ReactMarkdown>
 
               {/* Celebration Overlay — แสดงเมื่อเรียนจบครบทุกกล่องในบทนั้น */}

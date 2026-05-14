@@ -33,29 +33,37 @@ load_dotenv()
 
 app = FastAPI()
 
+# --- Health Check สำหรับ Render / Docker ---
+@app.get("/healthz")
+async def healthz():
+    """Health check endpoint — Render ใช้ตรวจสอบว่า server พร้อมใช้งาน"""
+    return {"status": "ok"}
+
 # --- Token Quota Management ---
-QUOTA_FILE = os.path.join(os.path.dirname(__file__), "data", "user_quotas.json")
-DEFAULT_MAX_TOKENS = 100000 # 100k tokens limit
+# ใช้ Supabase เป็นหลัก, in-memory เป็น fallback (รองรับ Cloud deployment ที่ filesystem ไม่ถาวร)
+DEFAULT_MAX_TOKENS = 100000  # 100k tokens limit
+_quota_cache: dict = {}  # in-memory fallback
 
 def get_all_quotas():
-    if not os.path.exists(QUOTA_FILE):
-        return {}
-    try:
-        with open(QUOTA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except:
-        return {}
+    """ดึง quota ของ user ทั้งหมด — ลอง Supabase ก่อน, fallback เป็น in-memory"""
+    return _quota_cache
 
 def update_user_quota(user_id: str, tokens_used: int):
-    quotas = get_all_quotas()
-    user_data = quotas.get(user_id, {"used": 0, "limit": DEFAULT_MAX_TOKENS})
+    """อัปเดต quota — บันทึกทั้ง in-memory cache และ Supabase"""
+    user_data = _quota_cache.get(user_id, {"used": 0, "limit": DEFAULT_MAX_TOKENS})
     user_data["used"] += tokens_used
-    quotas[user_id] = user_data
-    
-    # Ensure directory exists
-    os.makedirs(os.path.dirname(QUOTA_FILE), exist_ok=True)
-    with open(QUOTA_FILE, "w", encoding="utf-8") as f:
-        json.dump(quotas, f, ensure_ascii=False, indent=2)
+    _quota_cache[user_id] = user_data
+
+    # บันทึกลง Supabase (non-blocking — ไม่ block ถ้า table ยังไม่มี)
+    try:
+        supabase.table('user_quotas').upsert({
+            "user_id": user_id,
+            "used": user_data["used"],
+            "limit_tokens": user_data["limit"]
+        }, on_conflict="user_id").execute()
+    except Exception as e:
+        print(f"Quota save to Supabase failed (non-critical): {e}")
+
     return user_data
 
 # Middleware
@@ -191,9 +199,7 @@ def parse_json_from_text(text: str) -> Dict[str, Any]:
     if not text or not text.strip():
         raise ValueError("AI ส่ง response ว่างเปล่ากลับมา")
     
-    raw_text = text.strip()
     import re
-    
     raw_text = text.strip()
     
     # พยายามดึงเฉพาะก้อน JSON ออกมา (จาก { ถึง })
@@ -305,10 +311,13 @@ class ExamSchema(BaseModel):
     questions: List[ExamQuestion]
 
 # 3. Define the Graph State using TypedDict (required for LangGraph Python)
-class AgentState(TypedDict):
+# ใช้ total=False เพื่อให้ current_lesson เป็น optional field (รองรับ Python 3.8+)
+class _AgentStateRequired(TypedDict):
     messages: Annotated[Sequence[BaseMessage], operator.add]
     context: str
-    current_lesson: Optional[str] = None
+
+class AgentState(_AgentStateRequired, total=False):
+    current_lesson: Optional[str]
 
 # 4. Load syllabus once at startup
 _syllabus_context = get_full_syllabus()
@@ -394,6 +403,9 @@ async def chat(request: ChatRequest):
         
         last_message = result["messages"][-1]
         
+        # Save to Supabase
+        current_user_id = request.userId or 'anonymous'
+        
         # Extract token usage and update quota
         tokens_used = 0
         if hasattr(last_message, "response_metadata"):
@@ -402,8 +414,6 @@ async def chat(request: ChatRequest):
         if tokens_used > 0:
             update_user_quota(current_user_id, tokens_used)
 
-        # Save to Supabase
-        current_user_id = request.userId or 'anonymous'
         user_msg = request.messages[-1].content
         
         try:
@@ -521,51 +531,6 @@ Context:
         
     except Exception as e:
         print("Quiz Parallel Generation Error:", e)
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
-        
-        # ใช้เนื้อหาเต็ม (request.content) เป็นหลักเพื่อให้อ่านครบทุกหัวข้อย่อย
-        context = request.content
-        
-        # หากไม่มีเนื้อหาส่งมา ให้ใช้ Vector Search ดึง Context ที่ละเอียดขึ้นจาก chunks
-        if not context or len(context.strip()) < 50:
-            context = await search_lessons_vector(request.chapterTitle, limit=10)
-            if not context:
-                context = await get_subject_section(request.chapterTitle)
-
-        # ตัด Context ที่ยาวเกินไปเพื่อลด Token (เก็บเนื้อหาสำคัญไว้ครบ)
-        context = TrimContext(context)
-
-        prompt = f"""You are a Computer Science educator. Create a 10-question quiz about: {request.chapterTitle}.
-Rules: Use ONLY the Context below. Write in Thai. Keep English technical terms.
-Each question: 4 options, 1 correct, include explanation.
-JSON format:
-{{
-  "questions": [
-    {{"question": "str", "options": ["a","b","c","d"], "correctIndex": 0, "domain": "Remember", "explanation": "str"}}
-  ]
-}}
-
-Context:
-{context}"""
-
-        # ลองสูงสุด 2 ครั้ง เผื่อโมเดลเล็กส่ง response ว่าง
-        last_error = None
-        for attempt in range(2):
-            try:
-                result = await InvokeGeneration([SystemMessage(content=prompt)])
-                print(f"  [Quiz] attempt {attempt+1} response length: {len(result.content or '')} chars")
-                parsed = parse_json_from_text(result.content)
-                return parsed
-            except (json.JSONDecodeError, ValueError) as parse_err:
-                last_error = parse_err
-                print(f"  [Quiz] attempt {attempt+1} parse failed: {parse_err}")
-                if attempt < 1:
-                    await asyncio.sleep(1)
-        raise last_error
-        
-    except Exception as e:
-        print("Quiz Generation Error:", e)
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 

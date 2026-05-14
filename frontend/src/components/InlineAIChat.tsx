@@ -309,22 +309,7 @@ export function InlineAIChat({ courseName, currentLesson, initialTopic, external
         <div className="w-9" />
 
         <h2 className="text-lg font-bold tracking-tight text-white">CHATBOT</h2>
-        
-        {/* Token Usage Percentage */}
-        <div className="absolute right-[70px] top-[26px] flex flex-col items-end">
-          <span className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-0.5">Quota</span>
-          <div className="flex items-center gap-2">
-            <div className="w-16 h-1.5 bg-white/10 rounded-full overflow-hidden hidden sm:block">
-              <div 
-                className="h-full bg-[var(--color-primary)] transition-all duration-1000" 
-                style={{ width: `${Math.max(0, Math.floor(((quota.limit - quota.used) / quota.limit) * 100))}%` }}
-              />
-            </div>
-            <span className="text-[13px] font-black text-white tabular-nums">
-              {Math.max(0, Math.floor(((quota.limit - quota.used) / quota.limit) * 100))}%
-            </span>
-          </div>
-        </div>
+
 
         {/* #3 — ปุ่ม Clear Chat */}
         <button

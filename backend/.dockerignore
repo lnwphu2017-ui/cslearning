@@ -8,3 +8,4 @@ env
 .git
 .gitignore
 *.md
+.env
